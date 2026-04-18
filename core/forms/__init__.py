@@ -10,6 +10,7 @@ from core.forms.hub_forms import (
     HubPasswordChangeForm,
     HubUiPreferenceForm,
     HubUserCreateForm,
+    HubWorkspaceCreateForm,
     HubWorkspaceMemberRoleForm,
     HubWorkspaceProviderForm,
 )

@@ -40,6 +40,7 @@ from .forms import (
     HubPasswordChangeForm,
     HubUiPreferenceForm,
     HubUserCreateForm,
+    HubWorkspaceCreateForm,
     HubWorkspaceMemberRoleForm,
     HubWorkspaceProviderForm,
 )
@@ -328,6 +329,9 @@ def hub_dashboard(request):
                 "feed_edit_form": None,
                 "selected_feed": None,
                 "selected_workspace": None,
+                "workspace_create_form": HubWorkspaceCreateForm(
+                    ui_language=ui_language,
+                ),
                 "workspace_provider_form": None,
                 "ui_preference_form": HubUiPreferenceForm(
                     initial={
@@ -394,6 +398,7 @@ def hub_dashboard(request):
         )
     else:
         feed_edit_form = None
+    workspace_create_form = HubWorkspaceCreateForm(ui_language=ui_language)
     workspace_provider_form = HubWorkspaceProviderForm(
         ui_language=ui_language,
         workspace_queryset=workspaces,
@@ -438,6 +443,7 @@ def hub_dashboard(request):
         "feed_edit_form": feed_edit_form,
         "selected_feed": selected_feed,
         "selected_workspace": selected_workspace,
+        "workspace_create_form": workspace_create_form,
         "workspace_provider_form": workspace_provider_form,
         "ui_preference_form": ui_preference_form,
         "source_kind_choices": Feed.SOURCE_KIND_CHOICES,
@@ -496,6 +502,31 @@ def hub_logout(request):
         _("Signed out successfully.") if _hub_language(request) == "en-us" else _("已退出登录。"),
     )
     return redirect("hub:login")
+
+
+@_login_required_hub
+@require_http_methods(["POST"])
+def hub_create_workspace(request):
+    ui_language = _hub_language(request)
+    activate(ui_language)
+    form = HubWorkspaceCreateForm(request.POST, ui_language=ui_language)
+    if form.is_valid():
+        workspace = form.save()
+        WorkspaceMembership.objects.create(
+            user=request.user,
+            workspace=workspace,
+            role=WorkspaceMembership.OWNER,
+        )
+        messages.success(
+            request,
+            _("Created workspace {}.").format(workspace.name),
+        )
+        return redirect(f"{_hub_redirect().url}?workspace={workspace.slug}")
+
+    for field, errors in form.errors.items():
+        for error in errors:
+            messages.error(request, f"{field}: {error}")
+    return _hub_redirect()
 
 
 @_login_required_hub

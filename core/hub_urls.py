@@ -8,6 +8,7 @@ urlpatterns = [
     path("login/", views.hub_login, name="login"),
     path("logout/", views.hub_logout, name="logout"),
     path("", views.hub_dashboard, name="dashboard"),
+    path("workspaces/create/", views.hub_create_workspace, name="create_workspace"),
     path("preferences/", views.hub_set_preferences, name="set_preferences"),
     path("account/password/", views.hub_change_password, name="change_password"),
     path("feeds/create/", views.hub_create_feed, name="create_feed"),

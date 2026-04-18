@@ -303,6 +303,44 @@ class HubWorkspaceProviderForm(forms.Form):
         return workspace
 
 
+class HubWorkspaceCreateForm(forms.ModelForm):
+    class Meta:
+        model = Workspace
+        fields = [
+            "name",
+            "description",
+            "default_target_language",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        self.ui_language = kwargs.pop("ui_language", "zh-hans")
+        super().__init__(*args, **kwargs)
+        self.fields["name"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "例如：AI 研究、Karpathy、BuilderPulse",
+            "For example: AI Research, Karpathy, BuilderPulse",
+        )
+        self.fields["description"].required = False
+        self.fields["description"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "可选说明：这个 workspace 用来管理什么",
+            "Optional note: what this workspace is for",
+        )
+
+    def clean_name(self):
+        name = (self.cleaned_data.get("name") or "").strip()
+        if not name:
+            raise forms.ValidationError(_("Workspace name is required."))
+        return name
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.is_active = True
+        if commit:
+            instance.save()
+        return instance
+
+
 class HubBulkExportForm(forms.Form):
     EXPORT_VARIANT_CHOICES = [
         ("translated", _("Chinese / translated")),

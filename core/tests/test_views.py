@@ -18,6 +18,7 @@ from ..views import (
     group_feed,
     hub_login,
     hub_dashboard,
+    hub_create_workspace,
     hub_create_feed,
     hub_bulk_export,
     hub_bulk_edit,
@@ -636,6 +637,37 @@ class ViewsTestCase(TestCase):
         self.assertEqual(response.status_code, 302)
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("new-password-123"))
+
+    def test_hub_create_workspace(self):
+        request = self.factory.post(
+            "/workspaces/create/",
+            {
+                "name": "New Workspace",
+                "description": "A fresh space",
+                "default_target_language": "English",
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_create_workspace(request)
+        self.assertEqual(response.status_code, 302)
+        workspace = Workspace.objects.get(name="New Workspace")
+        self.assertEqual(workspace.default_target_language, "English")
+        self.assertTrue(
+            WorkspaceMembership.objects.filter(
+                user=self.user,
+                workspace=workspace,
+                role=WorkspaceMembership.OWNER,
+                is_active=True,
+            ).exists()
+        )
+
+    def test_hub_dashboard_shows_workspace_create_entry_when_user_has_no_memberships(self):
+        WorkspaceMembership.objects.filter(user=self.user).delete()
+        request = self.factory.get("/")
+        self._setup_hub_request(request)
+        response = hub_dashboard(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("创建 workspace".encode("utf-8"), response.content)
 
     def test_hub_create_workspace_user(self):
         request = self.factory.post(

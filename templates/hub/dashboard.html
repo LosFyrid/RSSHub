@@ -326,6 +326,25 @@
                 <section class="panel">
                     <div class="panel-head">
                         <div>
+                            <p class="panel-kicker">{% if ui_language == "en-us" %}Workspace{% else %}Workspace{% endif %}</p>
+                            <h2>{% if ui_language == "en-us" %}Create workspace{% else %}创建 workspace{% endif %}</h2>
+                        </div>
+                    </div>
+                    <form class="stack-form" method="post" action="{% url 'hub:create_workspace' %}">
+                        {% csrf_token %}
+                        <label>{% if ui_language == "en-us" %}Name{% else %}名称{% endif %}{{ workspace_create_form.name }}</label>
+                        <label>{% if ui_language == "en-us" %}Description{% else %}说明{% endif %}{{ workspace_create_form.description }}</label>
+                        <label>{% if ui_language == "en-us" %}Default feed output language{% else %}默认 feed 输出语言{% endif %}{{ workspace_create_form.default_target_language }}</label>
+                        <button type="submit">{% if ui_language == "en-us" %}Create workspace{% else %}创建 workspace{% endif %}</button>
+                    </form>
+                    <div class="hint-box">
+                        <p>{% if ui_language == "en-us" %}Create a new collaboration space when you want a separate team, topic library, or subscription boundary. The creator becomes the first owner automatically.{% else %}当你需要一个新的团队空间、主题库，或独立的订阅边界时，就创建一个新的 workspace。创建者会自动成为第一个 Owner。{% endif %}</p>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <div>
                             <p class="panel-kicker">{% if ui_language == "en-us" %}Import{% else %}导入{% endif %}</p>
                             <h2>OPML</h2>
                         </div>
