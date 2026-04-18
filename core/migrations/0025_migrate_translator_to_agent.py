@@ -1,19 +1,13 @@
-from django.db import migrations, connection
+from django.db import migrations
 from utils.backup_db import backup_db
 from django.contrib.contenttypes.models import ContentType
 
 
-def check_table_exists():
-    # 检查两个表是否存在
-    cursor = connection.cursor()
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='translator_openaitranslator'"
-    )
-    oai_exists = cursor.fetchone() is not None
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='translator_deepltranslator'"
-    )
-    deepl_exists = cursor.fetchone() is not None
+def check_table_exists(schema_editor):
+    connection = schema_editor.connection
+    existing_tables = set(connection.introspection.table_names())
+    oai_exists = "translator_openaitranslator" in existing_tables
+    deepl_exists = "translator_deepltranslator" in existing_tables
 
     # 如果两个表都不存在，跳过迁移
     if not (oai_exists or deepl_exists):
@@ -25,8 +19,9 @@ def check_table_exists():
 
 
 def migrate_translator_data(apps, schema_editor):
+    connection = schema_editor.connection
     # 检查表是否存在
-    if not check_table_exists():
+    if not check_table_exists(schema_editor):
         print("No tables to migrate, skipping migration.")
         return
 
@@ -85,6 +80,9 @@ def migrate_translator_data(apps, schema_editor):
 
 
 def update_feed_foreign_keys(apps, schema_editor):
+    if not check_table_exists(schema_editor):
+        return
+
     # 获取新agent模型的ContentType
     Feed = apps.get_model("core", "Feed")
     OpenAIAgent = apps.get_model("core", "OpenAIAgent")

@@ -2,7 +2,7 @@ from django.contrib.auth.models import User, Group
 from django.contrib.admin import AdminSite
 from django.utils.translation import gettext_lazy as _
 from django.core.paginator import Paginator
-from django.urls import path
+from django.urls import path, reverse
 from django.conf import settings
 from django.utils.http import url_has_allowed_host_and_scheme
 from core.models.agent import OpenAIAgent, DeepLAgent, LibreTranslateAgent, TestAgent
@@ -11,7 +11,7 @@ from utils.modelAdmin_utils import (
 )
 from django.shortcuts import redirect, render
 
-from core.models import Feed, Filter, Tag, Digest
+from core.models import Feed, Filter, Tag, Digest, Workspace, FeedGroup
 
 
 class CoreAdminSite(AdminSite):
@@ -28,12 +28,15 @@ class CoreAdminSite(AdminSite):
         return custom_urls + urls
 
     def get_app_list(self, request, app_label=None):
+        def admin_url(name, *args):
+            return reverse(name, args=args)
+
         # app_list = super().get_app_list(request, app_label)
         app_list = [
             {
                 "name": "",
                 "app_label": "core",
-                "app_url": "/core/",
+                "app_url": "/admin/core/",
                 "has_module_perms": True,
                 "models": [
                     {
@@ -46,8 +49,36 @@ class CoreAdminSite(AdminSite):
                             "delete": True,
                             "view": True,
                         },
-                        "admin_url": "/core/feed/",
-                        "add_url": "/core/feed/add/",
+                        "admin_url": admin_url("admin:core_feed_changelist"),
+                        "add_url": admin_url("admin:core_feed_add"),
+                        "view_only": False,
+                    },
+                    {
+                        "model": Workspace,
+                        "name": "Workspaces",
+                        "object_name": "Workspace",
+                        "perms": {
+                            "add": True,
+                            "change": True,
+                            "delete": True,
+                            "view": True,
+                        },
+                        "admin_url": admin_url("admin:core_workspace_changelist"),
+                        "add_url": admin_url("admin:core_workspace_add"),
+                        "view_only": False,
+                    },
+                    {
+                        "model": FeedGroup,
+                        "name": "Feed Groups",
+                        "object_name": "FeedGroup",
+                        "perms": {
+                            "add": True,
+                            "change": True,
+                            "delete": True,
+                            "view": True,
+                        },
+                        "admin_url": admin_url("admin:core_feedgroup_changelist"),
+                        "add_url": admin_url("admin:core_feedgroup_add"),
                         "view_only": False,
                     },
                     {
@@ -60,8 +91,8 @@ class CoreAdminSite(AdminSite):
                             "delete": True,
                             "view": True,
                         },
-                        "admin_url": "/core/tag/",
-                        "add_url": "/core/tag/add/",
+                        "admin_url": admin_url("admin:core_tag_changelist"),
+                        "add_url": admin_url("admin:core_tag_add"),
                         "view_only": False,
                     },
                     {
@@ -74,8 +105,8 @@ class CoreAdminSite(AdminSite):
                             "delete": True,
                             "view": True,
                         },
-                        "admin_url": "/core/digest/",
-                        "add_url": "/core/digest/add/",
+                        "admin_url": admin_url("admin:core_digest_changelist"),
+                        "add_url": admin_url("admin:core_digest_add"),
                         "view_only": False,
                     },
                 ],
@@ -90,8 +121,8 @@ class CoreAdminSite(AdminSite):
                         # "model": " 'core.models.agent.DeepLAgent",
                         "name": _("Agents"),
                         "object_name": "Agent",
-                        "admin_url": "/agent/list",
-                        "add_url": "/agent/add",
+                        "admin_url": admin_url("admin:agent_list"),
+                        "add_url": admin_url("admin:agent_add"),
                         # "view_only": False,
                     },
                     {
@@ -104,8 +135,8 @@ class CoreAdminSite(AdminSite):
                             "delete": True,
                             "view": True,
                         },
-                        "admin_url": "/core/filter/",
-                        "add_url": "/core/filter/add/",
+                        "admin_url": admin_url("admin:core_filter_changelist"),
+                        "add_url": admin_url("admin:core_filter_add"),
                         "view_only": False,
                     },
                 ],
@@ -131,8 +162,8 @@ class CoreAdminSite(AdminSite):
                                 "delete": True,
                                 "view": True,
                             },
-                            "admin_url": "/auth/user/",
-                            "add_url": "/auth/user/add/",
+                            "admin_url": admin_url("admin:auth_user_changelist"),
+                            "add_url": admin_url("admin:auth_user_add"),
                             "view_only": False,
                         },
                         {
@@ -145,8 +176,8 @@ class CoreAdminSite(AdminSite):
                                 "delete": True,
                                 "view": True,
                             },
-                            "admin_url": "/auth/group/",
-                            "add_url": "/auth/group/add/",
+                            "admin_url": admin_url("admin:auth_group_changelist"),
+                            "add_url": admin_url("admin:auth_group_add"),
                             "view_only": False,
                         },
                     ],
@@ -221,9 +252,8 @@ def agent_list(request):
 
 def agent_add(request):
     if request.method == "POST":
-        agent_name = request.POST.get("agent_name", "/")
-        # redirect to example.com/agent/agent_name/add
-        target = f"/core/{agent_name}/add"
+        agent_name = request.POST.get("agent_name", "")
+        target = f"/admin/core/{agent_name}/add" if agent_name else "/admin/"
         return (
             redirect(target)
             if url_has_allowed_host_and_scheme(target, allowed_hosts=None)

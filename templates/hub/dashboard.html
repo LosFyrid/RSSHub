@@ -1,0 +1,529 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="{{ ui_language|default:'zh-hans' }}" data-theme="{{ theme|default:'system' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSS Hub</title>
+    <link rel="stylesheet" href="{% static 'hub/hub.css' %}">
+</head>
+<body>
+    <main class="hub-shell">
+        <section class="hero-panel">
+            <div class="hero-copy-block">
+                <p class="eyebrow">RSS Hub</p>
+                <h1>{% if ui_language == "en-us" %}Manage translated subscriptions as a focused internal product.{% else %}把翻译信源和 GitHub Markdown 信源放进一个真正可协作、可管理的内部产品。{% endif %}</h1>
+                <p class="hero-copy">
+                    {% if ui_language == "en-us" %}
+                    UI language only changes the console. Feed output language is configured separately per workspace or feed. A workspace is the collaboration boundary for a team, topic collection, or independent subscription space.
+                    {% else %}
+                    UI 语言只控制控制台界面。Feed 输出语言仍按 workspace 或单个信源单独配置。Workspace 是协作边界，可以理解成一个小团队、一个主题库，或一个独立的订阅空间。
+                    {% endif %}
+                </p>
+            </div>
+            <div class="hero-rail">
+                <section class="hero-utility-card">
+                    <div class="hero-card-head">
+                        <p class="hero-card-kicker">{% if ui_language == "en-us" %}Interface{% else %}界面设置{% endif %}</p>
+                        <p class="hero-card-copy">{% if ui_language == "en-us" %}Only the management console changes here. Feed output language and provider behavior stay in workspace or feed settings.{% else %}这里只修改管理控制台界面。Feed 输出语言与 provider 行为仍在 workspace 或单个信源配置中单独管理。{% endif %}</p>
+                    </div>
+                    <form method="post" action="{% url 'hub:set_preferences' %}" class="preference-form">
+                        {% csrf_token %}
+                        <label>
+                            <span>{% if ui_language == "en-us" %}UI Language{% else %}界面语言{% endif %}</span>
+                            {{ ui_preference_form.ui_language }}
+                        </label>
+                        <label>
+                            <span>{% if ui_language == "en-us" %}Theme{% else %}主题{% endif %}</span>
+                            {{ ui_preference_form.theme }}
+                        </label>
+                        <div class="form-actions">
+                            <button type="submit" class="ghost-button">{% if ui_language == "en-us" %}Apply UI{% else %}应用界面设置{% endif %}</button>
+                        </div>
+                    </form>
+                </section>
+                <section class="hero-utility-card">
+                    <div class="hero-card-head">
+                        <p class="hero-card-kicker">{% if ui_language == "en-us" %}Quick Access{% else %}快速入口{% endif %}</p>
+                        <p class="hero-card-copy">{% if ui_language == "en-us" %}Subscription links remain public in this phase. Login protects the management surface, workspace operations, and member management only.{% else %}这一阶段订阅链接仍保持公开。登录只保护管理界面、workspace 操作和成员管理。{% endif %}</p>
+                    </div>
+                    <div class="hero-links">
+                        <a class="ghost-link" href="/admin/">Admin</a>
+                        {% if selected_workspace %}
+                        <a class="ghost-link" href="/rss/workspace/{{ selected_workspace.slug }}">{% if ui_language == "en-us" %}Workspace RSS{% else %}Workspace RSS 输出{% endif %}</a>
+                        {% endif %}
+                        <form method="post" action="{% url 'hub:logout' %}">
+                            {% csrf_token %}
+                            <button type="submit" class="ghost-button full-width">{% if ui_language == "en-us" %}Sign out{% else %}退出登录{% endif %}</button>
+                        </form>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        {% if messages %}
+        <section class="message-stack">
+            {% for message in messages %}
+            <div class="message {{ message.tags|default:'info' }}">{{ message }}</div>
+            {% endfor %}
+        </section>
+        {% endif %}
+
+        {% if selected_workspace %}
+        <section class="workspace-switcher-banner">
+            <div class="workspace-switcher-copy">
+                <p class="panel-kicker">{% if ui_language == "en-us" %}Current Workspace{% else %}当前 Workspace{% endif %}</p>
+                <h2>{{ selected_workspace.name }}</h2>
+                <p class="workspace-switcher-meta">
+                    {% if ui_language == "en-us" %}
+                    Switch only among workspaces you already belong to. This changes the active management context, but public RSS and OPML links remain public as before.
+                    {% else %}
+                    这里只能切换到你已加入的 workspace。切换后会改变当前管理上下文，但公开 RSS / OPML 订阅链接仍保持公开。
+                    {% endif %}
+                </p>
+            </div>
+            <form method="get" class="workspace-switcher-form">
+                {% if filters.q %}<input type="hidden" name="q" value="{{ filters.q }}">{% endif %}
+                {% if filters.group %}<input type="hidden" name="group" value="{{ filters.group }}">{% endif %}
+                {% if filters.source_kind %}<input type="hidden" name="source_kind" value="{{ filters.source_kind }}">{% endif %}
+                <input type="hidden" name="archived" value="{{ filters.archived|default:'active' }}">
+                <label>
+                    <span>{% if ui_language == "en-us" %}Switch workspace{% else %}切换 workspace{% endif %}</span>
+                    <select name="workspace" onchange="this.form.submit()">
+                        {% for workspace in workspaces %}
+                        <option value="{{ workspace.slug }}" {% if selected_workspace and selected_workspace.id == workspace.id %}selected{% endif %}>{{ workspace.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <noscript>
+                    <button type="submit" class="ghost-button">{% if ui_language == "en-us" %}Go{% else %}切换{% endif %}</button>
+                </noscript>
+            </form>
+        </section>
+        {% endif %}
+
+        <section class="layout-grid">
+            <div class="panel panel-wide">
+                <div class="panel-head">
+                    <div>
+                        <p class="panel-kicker">{% if ui_language == "en-us" %}Sources{% else %}信源区{% endif %}</p>
+                        <h2>
+                            <span class="title-primary">{% if ui_language == "en-us" %}Subscription inventory{% else %}订阅总览{% endif %}</span>
+                            <span class="title-secondary">{% if ui_language == "en-us" %}Use bulk mode only when you need to touch many feeds at once. Routine edits belong in the detail panel on the right.{% else %}需要同时处理多个信源时再进入批量模式。日常修改放在右侧的单信源详情面板里。{% endif %}</span>
+                        </h2>
+                    </div>
+                    <div class="stats-inline">
+                        <span>{{ feeds|length }} feeds</span>
+                        <span>{{ groups|length }} groups</span>
+                        <span>{{ workspaces|length }} workspaces</span>
+                    </div>
+                </div>
+
+                <form class="filters-bar" method="get">
+                    <input type="search" name="q" value="{{ filters.q }}" placeholder="{% if ui_language == 'en-us' %}Search by name, URL, slug, or source reference{% else %}按名称、URL、slug 或来源标识搜索{% endif %}">
+                    <select name="workspace">
+                        <option value="">{% if ui_language == "en-us" %}All workspaces{% else %}全部 workspace{% endif %}</option>
+                        {% for workspace in workspaces %}
+                        <option value="{{ workspace.slug }}" {% if filters.workspace == workspace.slug %}selected{% endif %}>{{ workspace.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <select name="group">
+                        <option value="">{% if ui_language == "en-us" %}All groups{% else %}全部分组{% endif %}</option>
+                        {% for group in groups %}
+                        <option value="{{ group.slug }}" {% if filters.group == group.slug %}selected{% endif %}>{{ group.workspace.name }} / {{ group.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <select name="source_kind">
+                        <option value="">{% if ui_language == "en-us" %}All source types{% else %}全部类型{% endif %}</option>
+                        {% for value, label in source_kind_choices %}
+                        <option value="{{ value }}" {% if filters.source_kind == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <select name="archived">
+                        <option value="active" {% if filters.archived == "active" %}selected{% endif %}>{% if ui_language == "en-us" %}Active only{% else %}仅活跃{% endif %}</option>
+                        <option value="all" {% if filters.archived == "all" %}selected{% endif %}>{% if ui_language == "en-us" %}All feeds{% else %}全部{% endif %}</option>
+                        <option value="only" {% if filters.archived == "only" %}selected{% endif %}>{% if ui_language == "en-us" %}Archived only{% else %}仅归档{% endif %}</option>
+                    </select>
+                    <button type="submit">{% if ui_language == "en-us" %}Filter{% else %}筛选{% endif %}</button>
+                </form>
+
+                <div class="mode-bar">
+                    <button type="button" id="enter-bulk-mode" class="ghost-button mode-toggle" aria-controls="bulk-mode-panel" aria-expanded="false">{% if ui_language == "en-us" %}Enter bulk edit{% else %}进入批量编辑{% endif %}</button>
+                    <span class="mode-hint">{% if ui_language == "en-us" %}Only feeds you explicitly check in this mode will be affected by batch actions.{% else %}只有在这个模式里显式勾选的信源，才会参与批量操作。{% endif %}</span>
+                </div>
+
+                <section id="bulk-mode-panel" class="bulk-mode-panel is-hidden">
+                    <div class="bulk-mode-head">
+                        <div>
+                            <strong>{% if ui_language == "en-us" %}Batch management{% else %}批量管理{% endif %}</strong>
+                            <p>{% if ui_language == "en-us" %}Export, regroup, retag, adjust provider strategy, archive, and delete all live here. Leaving bulk mode clears the current selection to avoid accidental edits.{% else %}导出、改分组、改标签、改 provider 策略、归档和删除都集中在这里。退出批量模式会清空当前勾选，避免误操作。{% endif %}</p>
+                        </div>
+                        <button type="button" id="exit-bulk-mode" class="ghost-button">{% if ui_language == "en-us" %}Exit bulk edit{% else %}退出批量编辑{% endif %}</button>
+                    </div>
+
+                    <form method="post" action="{% url 'hub:bulk_export' %}" id="bulk-export-form" class="stack-section">
+                        {% csrf_token %}
+                        <input type="hidden" name="selected_feeds" id="selected-feeds-input">
+                        <div class="bulk-toolbar">
+                            <div class="bulk-meta">
+                                <strong id="selected-count">0</strong>
+                                <span>{% if ui_language == "en-us" %}selected{% else %}已选择{% endif %}</span>
+                            </div>
+                            <select name="export_variant">
+                                <option value="translated">{% if ui_language == "en-us" %}Chinese / translated{% else %}中文翻译版{% endif %}</option>
+                                <option value="proxy">{% if ui_language == "en-us" %}English / original{% else %}英文原版{% endif %}</option>
+                            </select>
+                            <select name="export_format">
+                                <option value="opml">OPML</option>
+                                <option value="links">{% if ui_language == "en-us" %}Feed links{% else %}订阅链接{% endif %}</option>
+                            </select>
+                            <button type="submit">{% if ui_language == "en-us" %}Export selection{% else %}导出所选{% endif %}</button>
+                        </div>
+                    </form>
+
+                    <form method="post" action="{% url 'hub:bulk_edit' %}" id="bulk-edit-form" class="bulk-edit-sheet">
+                        {% csrf_token %}
+                        <input type="hidden" name="selected_feeds" id="selected-feeds-edit-input">
+                        <div class="sheet-grid">
+                            <label>
+                                <span>{% if ui_language == "en-us" %}Group action{% else %}分组操作{% endif %}</span>
+                                {{ bulk_edit_form.group_mode }}
+                            </label>
+                            <label>
+                                <span>{% if ui_language == "en-us" %}Groups{% else %}分组{% endif %}</span>
+                                {{ bulk_edit_form.groups }}
+                            </label>
+                            <label>
+                                <span>{% if ui_language == "en-us" %}Tag action{% else %}标签操作{% endif %}</span>
+                                {{ bulk_edit_form.tag_mode }}
+                            </label>
+                            <label>
+                                <span>{% if ui_language == "en-us" %}Tags{% else %}标签{% endif %}</span>
+                                {{ bulk_edit_form.tags }}
+                            </label>
+                            <label>
+                                <span>{% if ui_language == "en-us" %}Translation provider action{% else %}翻译 provider 操作{% endif %}</span>
+                                {{ bulk_edit_form.provider_mode }}
+                            </label>
+                            <label>
+                                <span>{% if ui_language == "en-us" %}Translator override{% else %}翻译器覆盖{% endif %}</span>
+                                {{ bulk_edit_form.translator_option }}
+                            </label>
+                            <label>
+                                <span>{% if ui_language == "en-us" %}Summarizer override{% else %}摘要器覆盖{% endif %}</span>
+                                {{ bulk_edit_form.summarizer }}
+                            </label>
+                            <label>
+                                <span>{% if ui_language == "en-us" %}Translation display{% else %}翻译显示方式{% endif %}</span>
+                                {{ bulk_edit_form.translation_display }}
+                            </label>
+                            <label>
+                                <span>{% if ui_language == "en-us" %}Record action{% else %}记录操作{% endif %}</span>
+                                {{ bulk_edit_form.record_action }}
+                            </label>
+                        </div>
+                        <button type="submit">{% if ui_language == "en-us" %}Apply bulk edit{% else %}应用批量编辑{% endif %}</button>
+                    </form>
+                </section>
+
+                <div class="feed-table-wrap">
+                    <table class="feed-table">
+                        <thead>
+                            <tr>
+                                <th class="bulk-col"><input type="checkbox" id="select-all"></th>
+                                <th>{% if ui_language == "en-us" %}Feed{% else %}信源{% endif %}</th>
+                                <th>{% if ui_language == "en-us" %}Type{% else %}类型{% endif %}</th>
+                                <th>{% if ui_language == "en-us" %}Workspace / Groups{% else %}Workspace / 分组{% endif %}</th>
+                                <th>{% if ui_language == "en-us" %}Status{% else %}状态{% endif %}</th>
+                                <th>{% if ui_language == "en-us" %}Subscriptions{% else %}订阅链接{% endif %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for feed in feeds %}
+                            <tr class="{% if selected_feed and selected_feed.id == feed.id %}is-selected{% endif %}">
+                                <td class="bulk-col">
+                                    <input type="checkbox" class="feed-check" value="{{ feed.id }}">
+                                </td>
+                                <td>
+                                    <a class="feed-title" href="?{% if filters.q %}q={{ filters.q|urlencode }}&{% endif %}{% if filters.workspace %}workspace={{ filters.workspace|urlencode }}&{% endif %}{% if filters.group %}group={{ filters.group|urlencode }}&{% endif %}{% if filters.source_kind %}source_kind={{ filters.source_kind|urlencode }}&{% endif %}archived={{ filters.archived|default:'active'|urlencode }}&feed={{ feed.id }}">
+                                        {{ feed.name|default:feed.feed_url|default:feed.slug }}
+                                    </a>
+                                    <div class="subline">{{ feed.feed_url|default:feed.source_ref|default:"-" }}</div>
+                                    <div class="meta-row">
+                                        <span class="mini-pill">{% if feed.is_archived %}{% if ui_language == "en-us" %}Archived{% else %}已归档{% endif %}{% else %}{% if ui_language == "en-us" %}Active{% else %}活跃{% endif %}{% endif %}</span>
+                                        <span class="mini-pill">{{ feed.target_language }}</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="type-pill type-{{ feed.source_kind }}">{{ feed.get_source_kind_display_label }}</span>
+                                </td>
+                                <td>
+                                    <div>{{ feed.workspace.name }}</div>
+                                    <div class="subline">
+                                        {% for group in feed.groups.all %}
+                                            {{ group.name }}{% if not forloop.last %}, {% endif %}
+                                        {% empty %}
+                                            {% if ui_language == "en-us" %}Ungrouped{% else %}未分组{% endif %}
+                                        {% endfor %}
+                                    </div>
+                                    <div class="subline">
+                                        {% for tag in feed.tags.all %}
+                                            #{{ tag.name }}{% if not forloop.last %} {% endif %}
+                                        {% empty %}
+                                            {% if ui_language == "en-us" %}No tags{% else %}无标签{% endif %}
+                                        {% endfor %}
+                                    </div>
+                                </td>
+                                <td>
+                                    <div class="status-stack">
+                                        <span>{% if ui_language == "en-us" %}Fetch{% else %}抓取{% endif %}: {{ feed.fetch_status|default:"-" }}</span>
+                                        <span>{% if ui_language == "en-us" %}Translate{% else %}翻译{% endif %}: {{ feed.translation_status|default:"-" }}</span>
+                                        <span>{% if ui_language == "en-us" %}Last fetch{% else %}上次抓取{% endif %}: {{ feed.last_fetch|default:"-" }}</span>
+                                        <span>{% if ui_language == "en-us" %}Last translate{% else %}上次翻译{% endif %}: {{ feed.last_translate|default:"-" }}</span>
+                                        <span>{% if ui_language == "en-us" %}Last error{% else %}最近错误{% endif %}: {{ feed.log|default:"-"|truncatechars:140 }}</span>
+                                    </div>
+                                </td>
+                                <td class="link-cell">
+                                    <a href="{{ feed.get_translated_feed_url }}" target="_blank">{% if ui_language == "en-us" %}Translated{% else %}中文{% endif %}</a>
+                                    <a href="{{ feed.get_proxy_feed_url }}" target="_blank">{% if ui_language == "en-us" %}Original{% else %}原版{% endif %}</a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="empty-state">{% if ui_language == "en-us" %}No feeds match the current filter set.{% else %}当前筛选条件下没有信源。{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="side-stack">
+                <section class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">{% if ui_language == "en-us" %}Add Source{% else %}添加信源{% endif %}</p>
+                            <h2>{% if ui_language == "en-us" %}Create translated feed{% else %}新增翻译信源{% endif %}</h2>
+                        </div>
+                    </div>
+                    {% if create_form %}
+                    <form class="stack-form" method="post" action="{% url 'hub:create_feed' %}">
+                        {% csrf_token %}
+                        <label>{% if ui_language == "en-us" %}Workspace{% else %}Workspace{% endif %}{{ create_form.workspace }}</label>
+                        <label>RSS URL{{ create_form.feed_url }}</label>
+                        <label>{% if ui_language == "en-us" %}Display name{% else %}显示名称{% endif %}{{ create_form.name }}</label>
+                        <label>{% if ui_language == "en-us" %}Groups{% else %}分组{% endif %}{{ create_form.groups }}</label>
+                        <button type="submit">{% if ui_language == "en-us" %}Save feed{% else %}保存信源{% endif %}</button>
+                    </form>
+                    <div class="hint-box">
+                        <p>{% if ui_language == "en-us" %}New imports default to translated feeds. Structural source type stays fixed after creation so export URLs remain stable.{% else %}新导入的信源默认按翻译信源创建。结构性来源类型在创建后固定，避免导出链接变化。{% endif %}</p>
+                    </div>
+                    {% else %}
+                    <div class="empty-detail">{% if ui_language == "en-us" %}You do not belong to any active workspace yet.{% else %}你还不属于任何可用 workspace。{% endif %}</div>
+                    {% endif %}
+                </section>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">{% if ui_language == "en-us" %}Import{% else %}导入{% endif %}</p>
+                            <h2>OPML</h2>
+                        </div>
+                    </div>
+                    <form class="stack-form" method="post" action="{% url 'hub:import_opml' %}" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <label>
+                            {% if ui_language == "en-us" %}Workspace{% else %}Workspace{% endif %}
+                            <select name="workspace">
+                                {% for workspace in workspaces %}
+                                <option value="{{ workspace.id }}" {% if selected_workspace and selected_workspace.id == workspace.id %}selected{% endif %}>{{ workspace.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <label>
+                            OPML
+                            <input type="file" name="opml_file" accept=".opml,.xml" required>
+                        </label>
+                        <label class="checkbox-line">
+                            <input type="checkbox" name="create_groups_from_outlines" checked>
+                            {% if ui_language == "en-us" %}Create groups from outlines{% else %}根据 outline 自动创建分组{% endif %}
+                        </label>
+                        <button type="submit">{% if ui_language == "en-us" %}Import OPML{% else %}导入 OPML{% endif %}</button>
+                    </form>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">{% if ui_language == "en-us" %}Workspace Defaults{% else %}Workspace 默认设置{% endif %}</p>
+                            <h2>{% if selected_workspace %}{{ selected_workspace.name }}{% else %}Workspace{% endif %}</h2>
+                        </div>
+                    </div>
+                    {% if workspace_provider_form %}
+                    <form class="stack-form" method="post" action="{% url 'hub:update_workspace_providers' %}">
+                        {% csrf_token %}
+                        <label>{% if ui_language == "en-us" %}Workspace{% else %}Workspace{% endif %}{{ workspace_provider_form.workspace }}</label>
+                        <label>{% if ui_language == "en-us" %}Default feed output language{% else %}默认 feed 输出语言{% endif %}{{ workspace_provider_form.default_target_language }}</label>
+                        <label>{% if ui_language == "en-us" %}Default translator{% else %}默认翻译器{% endif %}{{ workspace_provider_form.default_translator_option }}</label>
+                        <label>{% if ui_language == "en-us" %}Default summarizer{% else %}默认摘要器{% endif %}{{ workspace_provider_form.default_summarizer }}</label>
+                        <button type="submit" {% if not can_manage_selected_workspace %}disabled{% endif %}>{% if ui_language == "en-us" %}Save workspace defaults{% else %}保存 workspace 默认设置{% endif %}</button>
+                    </form>
+                    <div class="hint-box">
+                        <p>{% if ui_language == "en-us" %}A workspace acts like a lightweight organization. Feed translation defaults inherit from here, while individual feeds can still override them later in the detail panel or bulk mode.{% else %}Workspace 可以理解成一个轻量组织。翻译默认值先在这里定义，单个信源仍然可以在详情页或批量模式中覆盖。{% endif %}</p>
+                    </div>
+                    {% endif %}
+                </section>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">{% if ui_language == "en-us" %}Members{% else %}成员{% endif %}</p>
+                            <h2>{% if selected_workspace %}{{ selected_workspace.name }}{% else %}Workspace{% endif %}</h2>
+                        </div>
+                    </div>
+                    {% if selected_workspace %}
+                    <div class="member-list">
+                        {% for row in member_rows %}
+                        <div class="member-row">
+                            <div class="member-summary">
+                                <div>
+                                    <strong>{{ row.membership.user.username }}</strong>
+                                    <div class="subline">{{ row.membership.user.email|default:"-" }}</div>
+                                </div>
+                                <span class="mini-pill">{{ row.membership.get_role_display }}</span>
+                            </div>
+                            {% if row.can_manage %}
+                            <div class="member-actions">
+                                <form method="post" action="{% url 'hub:update_workspace_member' row.membership.id %}" class="member-role-form">
+                                    {% csrf_token %}
+                                    {{ row.role_form.role }}
+                                    <button type="submit" class="ghost-button">{% if ui_language == "en-us" %}Save role{% else %}保存角色{% endif %}</button>
+                                </form>
+                                {% if row.can_remove %}
+                                <form method="post" action="{% url 'hub:remove_workspace_member' row.membership.id %}" class="member-remove-form">
+                                    {% csrf_token %}
+                                    <button type="submit" class="ghost-button danger-button">{% if ui_language == "en-us" %}Remove{% else %}移除{% endif %}</button>
+                                </form>
+                                {% else %}
+                                <span class="subline">{% if ui_language == "en-us" %}Keep at least one active owner.{% else %}至少保留一个激活 Owner。{% endif %}</span>
+                                {% endif %}
+                            </div>
+                            {% elif can_manage_workspace_members %}
+                            <div class="member-actions member-actions-locked">
+                                <span class="subline">{% if ui_language == "en-us" %}This owner can only be changed by another owner.{% else %}这个 Owner 只能由另一个 Owner 修改。{% endif %}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% empty %}
+                        <div class="empty-detail">{% if ui_language == "en-us" %}No active members yet.{% else %}当前还没有激活成员。{% endif %}</div>
+                        {% endfor %}
+                    </div>
+                    {% if member_create_form %}
+                    <form class="stack-form" method="post" action="{% url 'hub:create_workspace_user' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="workspace_slug" value="{{ selected_workspace.slug }}">
+                        <label>{% if ui_language == "en-us" %}Username{% else %}用户名{% endif %}{{ member_create_form.username }}</label>
+                        <label>{% if ui_language == "en-us" %}Email{% else %}邮箱{% endif %}{{ member_create_form.email }}</label>
+                        <div class="split-fields">
+                            <label>{% if ui_language == "en-us" %}First name{% else %}名字{% endif %}{{ member_create_form.first_name }}</label>
+                            <label>{% if ui_language == "en-us" %}Last name{% else %}姓氏{% endif %}{{ member_create_form.last_name }}</label>
+                        </div>
+                        <div class="split-fields">
+                            <label>{% if ui_language == "en-us" %}Password{% else %}密码{% endif %}{{ member_create_form.password1 }}</label>
+                            <label>{% if ui_language == "en-us" %}Repeat password{% else %}重复密码{% endif %}{{ member_create_form.password2 }}</label>
+                        </div>
+                        <label>{% if ui_language == "en-us" %}Role{% else %}角色{% endif %}{{ member_create_form.role }}</label>
+                        <button type="submit">{% if ui_language == "en-us" %}Create member{% else %}创建成员{% endif %}</button>
+                    </form>
+                    <div class="hint-box">
+                        <p>{% if ui_language == "en-us" %}Owners can manage every member. Managers can add members and manage non-owner members, but only owners can change or remove owners. Viewers can browse and export feeds only.{% else %}Owner 可以管理所有成员。Manager 可以添加成员，也可以管理非 Owner 成员；但涉及 Owner 的修改或移除，仍只能由 Owner 处理。Viewer 只能查看和导出信源。{% endif %}</p>
+                    </div>
+                    {% endif %}
+                    {% else %}
+                    <div class="empty-detail">{% if ui_language == "en-us" %}No accessible workspace selected yet.{% else %}当前没有可访问的 workspace。{% endif %}</div>
+                    {% endif %}
+                </section>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">{% if ui_language == "en-us" %}Account{% else %}账户{% endif %}</p>
+                            <h2>{{ hub_user.username }}</h2>
+                        </div>
+                    </div>
+                    <form class="stack-form" method="post" action="{% url 'hub:change_password' %}">
+                        {% csrf_token %}
+                        <label>{% if ui_language == "en-us" %}Current password{% else %}当前密码{% endif %}{{ password_form.old_password }}</label>
+                        <label>{% if ui_language == "en-us" %}New password{% else %}新密码{% endif %}{{ password_form.new_password1 }}</label>
+                        <label>{% if ui_language == "en-us" %}Repeat new password{% else %}重复新密码{% endif %}{{ password_form.new_password2 }}</label>
+                        <button type="submit">{% if ui_language == "en-us" %}Update password{% else %}更新密码{% endif %}</button>
+                    </form>
+                </section>
+
+                <section class="panel detail-panel">
+                    <div class="panel-head">
+                        <div>
+                            <p class="panel-kicker">{% if ui_language == "en-us" %}Feed Detail{% else %}信源详情{% endif %}</p>
+                            <h2>{% if selected_feed %}{{ selected_feed.name|default:selected_feed.feed_url|default:selected_feed.slug }}{% else %}{% if ui_language == "en-us" %}Select a feed{% else %}选择一个信源{% endif %}{% endif %}</h2>
+                        </div>
+                    </div>
+                    {% if selected_feed and feed_edit_form %}
+                    <div class="detail-readonly">
+                        <div><strong>{% if ui_language == "en-us" %}Workspace{% else %}Workspace{% endif %}</strong><span>{{ selected_feed.workspace.name }}</span></div>
+                        <div><strong>{% if ui_language == "en-us" %}Source type{% else %}来源类型{% endif %}</strong><span>{{ selected_feed.get_source_kind_display_label }}</span></div>
+                        <div><strong>Feed URL</strong><span>{{ selected_feed.feed_url|default:"-" }}</span></div>
+                        <div><strong>{% if ui_language == "en-us" %}Source reference{% else %}来源标识{% endif %}</strong><span>{{ selected_feed.source_ref|default:"-" }}</span></div>
+                        <div><strong>Slug</strong><span>{{ selected_feed.slug }}</span></div>
+                    </div>
+
+                    <div class="runtime-card">
+                        <div class="runtime-grid">
+                            <div><strong>{% if ui_language == "en-us" %}Last fetch{% else %}上次抓取{% endif %}</strong><span>{{ selected_feed.last_fetch|default:"-" }}</span></div>
+                            <div><strong>{% if ui_language == "en-us" %}Last translate{% else %}上次翻译{% endif %}</strong><span>{{ selected_feed.last_translate|default:"-" }}</span></div>
+                            <div><strong>{% if ui_language == "en-us" %}Fetch status{% else %}抓取状态{% endif %}</strong><span>{{ selected_feed.fetch_status|default:"-" }}</span></div>
+                            <div><strong>{% if ui_language == "en-us" %}Translate status{% else %}翻译状态{% endif %}</strong><span>{{ selected_feed.translation_status|default:"-" }}</span></div>
+                        </div>
+                    </div>
+
+                    <form class="stack-form" method="post" action="{% url 'hub:update_feed' selected_feed.id %}">
+                        {% csrf_token %}
+                        <label>{% if ui_language == "en-us" %}Display name{% else %}显示名称{% endif %}{{ feed_edit_form.name }}</label>
+                        <label>{% if ui_language == "en-us" %}Groups{% else %}分组{% endif %}{{ feed_edit_form.groups }}</label>
+                        <label>{% if ui_language == "en-us" %}Tags{% else %}标签{% endif %}{{ feed_edit_form.tags }}</label>
+                        <label>{% if ui_language == "en-us" %}Feed output language{% else %}Feed 输出语言{% endif %}{{ feed_edit_form.target_language }}</label>
+                        <div class="tri-checks">
+                            <label>{{ feed_edit_form.translate_title }} {% if ui_language == "en-us" %}Translate title{% else %}翻译标题{% endif %}</label>
+                            <label>{{ feed_edit_form.translate_content }} {% if ui_language == "en-us" %}Translate content{% else %}翻译正文{% endif %}</label>
+                            <label>{{ feed_edit_form.summary }} {% if ui_language == "en-us" %}Generate summary{% else %}生成摘要{% endif %}</label>
+                        </div>
+                        <label class="checkbox-line">{{ feed_edit_form.fetch_article }} {% if ui_language == "en-us" %}Fetch full article{% else %}全文提取{% endif %}</label>
+                        <div class="split-fields">
+                            <label>{% if ui_language == "en-us" %}Max posts{% else %}最大文章数{% endif %}{{ feed_edit_form.max_posts }}</label>
+                            <label>{% if ui_language == "en-us" %}Refresh interval (minutes){% else %}刷新间隔（分钟）{% endif %}{{ feed_edit_form.update_frequency }}</label>
+                        </div>
+                        <label>{% if ui_language == "en-us" %}Translation display{% else %}翻译显示方式{% endif %}{{ feed_edit_form.translation_display }}</label>
+                        <label>{% if ui_language == "en-us" %}Translator override{% else %}翻译器覆盖{% endif %}{{ feed_edit_form.translator_option }}</label>
+                        <label>{% if ui_language == "en-us" %}Summarizer override{% else %}摘要器覆盖{% endif %}{{ feed_edit_form.summarizer }}</label>
+                        <label>{% if ui_language == "en-us" %}Summary detail{% else %}摘要细节度{% endif %}{{ feed_edit_form.summary_detail }}</label>
+                        <label>{% if ui_language == "en-us" %}Additional prompt{% else %}附加提示词{% endif %}{{ feed_edit_form.additional_prompt }}</label>
+                        <label class="checkbox-line">{{ feed_edit_form.is_archived }} {% if ui_language == "en-us" %}Archived{% else %}归档{% endif %}</label>
+                        <button type="submit">{% if ui_language == "en-us" %}Save feed detail{% else %}保存信源详情{% endif %}</button>
+                    </form>
+                    <form method="post" action="{% url 'hub:refresh_feed' selected_feed.id %}" class="inline-action">
+                        {% csrf_token %}
+                        <button type="submit" class="ghost-button">{% if ui_language == "en-us" %}Refresh now{% else %}立即刷新{% endif %}</button>
+                    </form>
+                    <div class="log-block">
+                        <strong>{% if ui_language == "en-us" %}Latest log{% else %}最近日志{% endif %}</strong>
+                        <div>{{ selected_feed.log|default:"-" }}</div>
+                    </div>
+                    {% else %}
+                    <div class="empty-detail">{% if ui_language == "en-us" %}Choose a feed from the list to edit language, provider, runtime, and archive settings here.{% else %}从左侧列表选择一个信源，再在这里编辑输出语言、provider、运行状态和归档设置。{% endif %}</div>
+                    {% endif %}
+                </section>
+            </div>
+        </section>
+    </main>
+    <script src="{% static 'hub/hub.js' %}"></script>
+</body>
+</html>

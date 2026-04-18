@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from django.urls import path, reverse
 from django.db import transaction
-from core.models import Feed
+from core.models import Feed, Workspace
 from core.forms import FeedForm
 from core.actions import (
     export_original_feed_as_opml,
@@ -16,9 +16,8 @@ from core.actions import (
     clean_ai_summary,
 )
 from utils.modelAdmin_utils import status_icon
-from core.tasks.task_manager import task_manager
+from core.tasks.async_jobs import submit_async_task
 from core.views import import_opml
-from core.management.commands.feed_updater import update_single_feed
 from core.admin import core_admin_site
 
 logger = logging.getLogger(__name__)
@@ -29,6 +28,8 @@ class FeedAdmin(admin.ModelAdmin):
     form = FeedForm
     list_display = [
         "name",
+        "workspace",
+        "source_kind",
         "fetch_feed",
         "generate_feed",
         "translator",
@@ -39,8 +40,10 @@ class FeedAdmin(admin.ModelAdmin):
         "show_tags",
         "target_language",
     ]
-    search_fields = ["name", "feed_url", "slug", "author", "link"]
+    search_fields = ["name", "feed_url", "slug", "author", "link", "source_ref"]
     list_filter = [
+        "workspace",
+        "source_kind",
         "tags",
         "fetch_status",
         "translation_status",
@@ -59,7 +62,7 @@ class FeedAdmin(admin.ModelAdmin):
         "last_translate",
         "show_log",
     ]
-    autocomplete_fields = ["filters", "tags"]
+    autocomplete_fields = ["filters", "tags", "groups"]
     fieldsets = (
         # 基础信息组（始终可见）
         (
@@ -67,6 +70,10 @@ class FeedAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "feed_url",
+                    "source_kind",
+                    "source_ref",
+                    "workspace",
+                    "groups",
                     "name",
                     "max_posts",
                     "simple_update_frequency",
@@ -154,6 +161,7 @@ class FeedAdmin(admin.ModelAdmin):
             '<a class="button" href="{}">导入OPML</a>',
             reverse("admin:core_feed_import_opml"),
         )
+        extra_context["workspace_choices"] = Workspace.objects.all().order_by("name")
         return super().changelist_view(request, extra_context=extra_context)
 
     def save_model(self, request, obj, form, change):
@@ -201,10 +209,12 @@ class FeedAdmin(admin.ModelAdmin):
         transaction.on_commit(partial(self._submit_feed_update_task, obj))
 
     def _submit_feed_update_task(self, feed):
-        task_id = task_manager.submit_task(
-            f"update_feed_{feed.slug}", update_single_feed, feed
+        task = submit_async_task(
+            f"update_feed_{feed.slug}",
+            "core.jobs.update_single_feed_job",
+            feed.id,
         )
-        logger.info(f"Submitted feed update task after commit: {task_id}")
+        logger.info("Submitted feed update task after commit: %s", task.id)
 
     @admin.display(description=_("Name"))
     def show_name(self, obj):

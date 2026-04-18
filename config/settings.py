@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 import tomllib
+from urllib.parse import parse_qsl, unquote, urlparse
 
 
 # from django.utils.crypto import get_random_string
@@ -22,6 +23,7 @@ import sys
 SITE_URL = os.environ.get("SITE_URL", "http://localhost:8000")
 USER_MANAGEMENT = os.environ.get("USER_MANAGEMENT") == "1"
 DEMO = os.environ.get("DEMO") == "1"
+DATABASE_BACKEND = os.environ.get("DATABASE_BACKEND", "sqlite").lower()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 # Read version from pyproject.toml
@@ -43,8 +45,18 @@ SECRET_KEY = os.environ.get("SECRET_KEY", get_random_secret_key())
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DEBUG") == "1"
 
-ALLOWED_HOSTS = ["*"]
-CSRF_TRUSTED_ORIGINS = os.environ.get("CSRF_TRUSTED_ORIGINS", "http://*").split(",")
+allowed_hosts_env = os.environ.get("ALLOWED_HOSTS")
+if allowed_hosts_env:
+    ALLOWED_HOSTS = [
+        host.strip() for host in allowed_hosts_env.split(",") if host.strip()
+    ]
+else:
+    ALLOWED_HOSTS = ["*"]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CSRF_TRUSTED_ORIGINS", "http://*").split(",")
+    if origin.strip()
+]
 INTERNAL_IPS = [
     "127.0.0.1",
 ]
@@ -52,8 +64,8 @@ SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
-CSRF_COOKIE_SECURE = False
-SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", "0") == "1"
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
 SESSION_COOKIE_DOMAIN = None
 SESSION_COOKIE_AGE = 1209600  # 2 weeks
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
@@ -129,15 +141,77 @@ WSGI_APPLICATION = "config.wsgi.application"
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 DATA_FOLDER = BASE_DIR / "data"
 DATA_FOLDER.mkdir(exist_ok=True)
-DATABASES = {
-    "default": {
+def _build_sqlite_database_config():
+    return {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": DATA_FOLDER / "db.sqlite3",
         "OPTIONS": {
             "timeout": SQLITE_TIMEOUT,
         },
     }
-}
+
+
+def _build_postgres_database_config():
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        parsed = urlparse(database_url)
+        if parsed.scheme not in {"postgres", "postgresql", "postgresql+psycopg"}:
+            raise ValueError(f"Unsupported DATABASE_URL scheme: {parsed.scheme}")
+
+        query_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        connect_timeout = int(
+            query_params.pop(
+                "connect_timeout", os.environ.get("POSTGRES_CONNECT_TIMEOUT", "5")
+            )
+        )
+        conn_max_age = int(
+            os.environ.get("POSTGRES_CONN_MAX_AGE", query_params.pop("conn_max_age", "60"))
+        )
+
+        return {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": unquote(parsed.path.lstrip("/"))
+            or os.environ.get("POSTGRES_DB", "rsshub"),
+            "USER": unquote(parsed.username or "")
+            or os.environ.get("POSTGRES_USER", "rsshub"),
+            "PASSWORD": unquote(parsed.password or "")
+            or os.environ.get("POSTGRES_PASSWORD", ""),
+            "HOST": parsed.hostname or os.environ.get("POSTGRES_HOST", "postgres"),
+            "PORT": str(parsed.port or os.environ.get("POSTGRES_PORT", "5432")),
+            "CONN_MAX_AGE": conn_max_age,
+            "OPTIONS": {
+                **query_params,
+                "connect_timeout": connect_timeout,
+            },
+        }
+
+    name = os.environ.get("POSTGRES_DB", "rsshub")
+    user = os.environ.get("POSTGRES_USER", "rsshub")
+    password = os.environ.get("POSTGRES_PASSWORD", "")
+    host = os.environ.get("POSTGRES_HOST", "postgres")
+    port = os.environ.get("POSTGRES_PORT", "5432")
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": name,
+        "USER": user,
+        "PASSWORD": password,
+        "HOST": host,
+        "PORT": port,
+        "CONN_MAX_AGE": int(os.environ.get("POSTGRES_CONN_MAX_AGE", "60")),
+        "OPTIONS": {
+            "connect_timeout": int(os.environ.get("POSTGRES_CONNECT_TIMEOUT", "5")),
+        },
+    }
+
+
+if DATABASE_BACKEND == "postgres":
+    DATABASES = {
+        "default": _build_postgres_database_config(),
+    }
+else:
+    DATABASES = {
+        "default": _build_sqlite_database_config(),
+    }
 
 if not DEBUG and "test" not in sys.argv:
     CACHES = {
@@ -156,6 +230,12 @@ if not DEBUG and "test" not in sys.argv:
             # Keys without an expiration date will be cleaned up,
             # and expired keys are cleaned up periodically by Redis.
             "TIMEOUT": 60 * 60 * 24,
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
         }
     }
 
@@ -218,7 +298,20 @@ STORAGES = {
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # https://pypi.org/project/django-encrypted-model-fields/
-FIELD_ENCRYPTION_KEY = "RWdGiEq3LgOf3Tyt3ALlEnxUkIlL4wS2dCDBe_sLWWo="
+FIELD_ENCRYPTION_KEY = os.environ.get(
+    "FIELD_ENCRYPTION_KEY", "RWdGiEq3LgOf3Tyt3ALlEnxUkIlL4wS2dCDBe_sLWWo="
+)
+ASYNC_TASK_BACKEND = os.environ.get("ASYNC_TASK_BACKEND", "local").lower()
+ASYNC_QUEUE_NAME = os.environ.get("ASYNC_QUEUE_NAME", "rsshub-default")
+ASYNC_REDIS_URL = os.environ.get(
+    "ASYNC_REDIS_URL", os.environ.get("REDIS_URL", "redis://localhost:6379/1")
+)
+ENABLE_CONTAINER_CRON = os.environ.get("ENABLE_CONTAINER_CRON", "0") == "1"
+DEFAULT_SUPERUSER_USERNAME = os.environ.get("DEFAULT_SUPERUSER_USERNAME", "admin")
+DEFAULT_SUPERUSER_EMAIL = os.environ.get(
+    "DEFAULT_SUPERUSER_EMAIL", "admin@example.com"
+)
+DEFAULT_SUPERUSER_PASSWORD = os.environ.get("DEFAULT_SUPERUSER_PASSWORD", "rssbox")
 
 DEFAULT_TARGET_LANGUAGE = os.environ.get(
     "DEFAULT_TARGET_LANGUAGE", "Chinese Simplified"

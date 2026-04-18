@@ -13,10 +13,8 @@ from django.conf import settings
 from lxml import etree
 from utils.modelAdmin_utils import get_all_agent_choices
 from core.admin import core_admin_site
-from core.models import Filter, Tag, OpenAIAgent
-from core.tasks.task_manager import task_manager
-from .management.commands.feed_updater import update_multiple_feeds
-from core.cache import cache_tag
+from core.models import Filter, Tag, OpenAIAgent, FeedGroup, Workspace
+from core.tasks.async_jobs import submit_async_task
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +55,13 @@ def clean_filter_results(modeladmin, request, queryset):
     )
 
 
-def _generate_opml_feed(title_prefix, queryset, get_feed_url_func, filename_prefix):
+def _generate_opml_feed(
+    title_prefix,
+    queryset,
+    get_feed_url_func,
+    filename_prefix,
+    group_by="tags",
+):
     """
     生成OPML文件的通用函数
 
@@ -88,9 +92,12 @@ def _generate_opml_feed(title_prefix, queryset, get_feed_url_func, filename_pref
         # 按分类组织订阅源
         categories = {}
         for feed in queryset:
-            feed_tags = list(feed.tags.all()) or [
-                None
-            ]  # 如果没有tag，用None表示默认分类
+            if group_by == "groups":
+                feed_tags = list(feed.groups.all()) or [None]
+            elif group_by == "workspace":
+                feed_tags = [feed.workspace]
+            else:
+                feed_tags = list(feed.tags.all()) or [None]
 
             for tag in feed_tags:
                 tag_name = tag.name if tag else "uncategorized"
@@ -147,7 +154,7 @@ def export_original_feed_as_opml(modeladmin, request, queryset):
     return _generate_opml_feed(
         title_prefix="Original Feeds",
         queryset=queryset,
-        get_feed_url_func=lambda feed: feed.feed_url,
+        get_feed_url_func=lambda feed: feed.get_proxy_feed_url(),
         filename_prefix="original",
     )
 
@@ -158,8 +165,44 @@ def export_translated_feed_as_opml(modeladmin, request, queryset):
     return _generate_opml_feed(
         title_prefix="Translated Feeds",
         queryset=queryset,
-        get_feed_url_func=lambda feed: f"{settings.SITE_URL}/rss/{feed.slug}",
+        get_feed_url_func=lambda feed: feed.get_translated_feed_url(),
         filename_prefix="translated",
+    )
+
+
+def export_workspace_feeds_as_opml(workspace: Workspace, variant: str):
+    queryset = workspace.feeds.all()
+    title_prefix = f"{workspace.name} {variant.title()} Feeds"
+    if variant == "proxy":
+        get_feed_url_func = lambda feed: feed.get_proxy_feed_url()
+        filename_prefix = f"{workspace.slug}_proxy"
+    else:
+        get_feed_url_func = lambda feed: feed.get_translated_feed_url()
+        filename_prefix = f"{workspace.slug}_translated"
+    return _generate_opml_feed(
+        title_prefix=title_prefix,
+        queryset=queryset,
+        get_feed_url_func=get_feed_url_func,
+        filename_prefix=filename_prefix,
+        group_by="groups",
+    )
+
+
+def export_group_feeds_as_opml(group: FeedGroup, variant: str):
+    queryset = group.feeds.all()
+    title_prefix = f"{group.workspace.name} / {group.name} {variant.title()} Feeds"
+    if variant == "proxy":
+        get_feed_url_func = lambda feed: feed.get_proxy_feed_url()
+        filename_prefix = f"{group.workspace.slug}_{group.slug}_proxy"
+    else:
+        get_feed_url_func = lambda feed: feed.get_translated_feed_url()
+        filename_prefix = f"{group.workspace.slug}_{group.slug}_translated"
+    return _generate_opml_feed(
+        title_prefix=title_prefix,
+        queryset=queryset,
+        get_feed_url_func=get_feed_url_func,
+        filename_prefix=filename_prefix,
+        group_by="groups",
     )
 
 
@@ -173,8 +216,12 @@ def feed_force_update(modeladmin, request, queryset):
             instance.translation_status = None
             instance.save()
 
-    feeds = queryset
-    task_manager.submit_task("Force Update Feeds", update_multiple_feeds, feeds)
+    for instance in queryset:
+        submit_async_task(
+            f"force_update_feed_{instance.id}",
+            "core.jobs.refresh_feed_job",
+            instance.id,
+        )
 
 
 @admin.display(description=_("Recombine related feeds."))
@@ -183,11 +230,19 @@ def tag_force_update(modeladmin, request, queryset):
 
     with transaction.atomic():
         for instance in queryset:
-            task_manager.submit_task(
-                "Force Update Tags", cache_tag, instance.slug, "t", "xml"
+            submit_async_task(
+                f"force_update_tag_{instance.slug}_xml",
+                "core.jobs.cache_tag_job",
+                instance.slug,
+                "t",
+                "xml",
             )
-            task_manager.submit_task(
-                "Force Update Tags", cache_tag, instance.slug, "t", "json"
+            submit_async_task(
+                f"force_update_tag_{instance.slug}_json",
+                "core.jobs.cache_tag_job",
+                instance.slug,
+                "t",
+                "json",
             )
             instance.last_updated = timezone.now()
             instance.save()

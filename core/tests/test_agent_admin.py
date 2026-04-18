@@ -17,7 +17,7 @@ class AgentAdminTest(TestCase):
         )
         self.admin = OpenAIAgentAdmin(self.openai_agent, self.site)
 
-    @patch("core.tasks.task_manager.task_manager.submit_task")
+    @patch("core.admin.agent_admin.submit_async_task")
     def test_save_model_behavior(self, mock_submit_task):
         """Test save_model success and exception handling."""
         request = self.factory.get("/admin/core/openaiahent/add/")
@@ -30,7 +30,7 @@ class AgentAdminTest(TestCase):
         self.openai_agent.refresh_from_db()
         mock_submit_task.assert_called_once()
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, "/core/agent")
+        self.assertEqual(response.url, "/admin/agent/list")
 
         # Test exception handling
         mock_submit_task.side_effect = Exception("Task Error")
@@ -43,9 +43,9 @@ class AgentAdminTest(TestCase):
         mock_submit_task.assert_called_once()
         self.assertFalse(self.openai_agent.valid)
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, "/core/agent")
+        self.assertEqual(response.url, "/admin/agent/list")
 
-    @patch("core.tasks.task_manager.task_manager.submit_task")
+    @patch("core.admin.agent_admin.submit_async_task")
     def test_save_model_uses_persisted_agent_id_in_task_name(self, mock_submit_task):
         request = self.factory.get("/admin/core/openaiahent/add/")
         new_agent = OpenAIAgent(
@@ -61,7 +61,7 @@ class AgentAdminTest(TestCase):
         self.assertEqual(task_name, f"validate_agent_{new_agent.id}")
         self.assertNotIn("None", task_name)
 
-    @patch("core.tasks.task_manager.task_manager.submit_task")
+    @patch("core.admin.agent_admin.submit_async_task")
     def test_save_model_submits_id_based_validation_task(self, mock_submit_task):
         request = self.factory.get("/admin/core/openaiahent/add/")
 
@@ -70,6 +70,7 @@ class AgentAdminTest(TestCase):
 
         submit_args = mock_submit_task.call_args[0]
         self.assertEqual(submit_args[0], f"validate_agent_{self.openai_agent.id}")
+        self.assertEqual(submit_args[1].__name__, "validate_agent_by_id")
         self.assertEqual(submit_args[2], self.openai_agent._meta.label_lower)
         self.assertEqual(submit_args[3], self.openai_agent.id)
 
@@ -83,7 +84,7 @@ class AgentAdminTest(TestCase):
         response = self.admin.delete_model(request, self.openai_agent)
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, "/core/agent")
+        self.assertEqual(response.url, "/admin/agent/list")
         self.assertEqual(OpenAIAgent.objects.count(), initial_count - 1)
         with self.assertRaises(OpenAIAgent.DoesNotExist):
             OpenAIAgent.objects.get(pk=self.openai_agent.pk)

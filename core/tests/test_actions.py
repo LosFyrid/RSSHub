@@ -108,7 +108,7 @@ class ActionsTestCase(TestCase):
         self.entry1.refresh_from_db()
         self.assertIsNone(self.entry1.ai_summary)
 
-    @patch("core.actions.task_manager.submit_task")
+    @patch("core.actions.submit_async_task")
     def test_feed_force_update_action(self, mock_submit_task):
         """Test the feed_force_update admin action."""
         request = self.factory.get("/")
@@ -119,9 +119,13 @@ class ActionsTestCase(TestCase):
         self.feed.refresh_from_db()
         self.assertIsNone(self.feed.fetch_status)
         self.assertIsNone(self.feed.translation_status)
-        mock_submit_task.assert_called_once()
+        mock_submit_task.assert_called_once_with(
+            f"force_update_feed_{self.feed.id}",
+            "core.jobs.refresh_feed_job",
+            self.feed.id,
+        )
 
-    @patch("core.actions.task_manager.submit_task")
+    @patch("core.actions.submit_async_task")
     def test_tag_force_update_action(self, mock_submit_task):
         """Test the tag_force_update admin action."""
         request = self.factory.get("/")
@@ -133,6 +137,20 @@ class ActionsTestCase(TestCase):
         tag.refresh_from_db()
         self.assertIsNotNone(tag.last_updated)
         self.assertEqual(mock_submit_task.call_count, 2)
+        mock_submit_task.assert_any_call(
+            f"force_update_tag_{tag.slug}_xml",
+            "core.jobs.cache_tag_job",
+            tag.slug,
+            "t",
+            "xml",
+        )
+        mock_submit_task.assert_any_call(
+            f"force_update_tag_{tag.slug}_json",
+            "core.jobs.cache_tag_job",
+            tag.slug,
+            "t",
+            "json",
+        )
 
     def test_feed_batch_modify_boolean_fields(self):
         """Test batch modify for boolean fields."""

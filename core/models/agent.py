@@ -12,7 +12,7 @@ from utils.text_handler import get_token_count, adaptive_chunking
 import deepl
 import json
 from urllib import request, parse
-from core.tasks.task_manager import task_manager
+from core.tasks.async_jobs import submit_async_task
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +153,7 @@ class OpenAIAgent(Agent):
                 fr = res.choices[0].finish_reason
                 # 提交后台任务检测模型限制
                 if self.max_tokens == 0:
-                    task_manager.submit_task(
+                    submit_async_task(
                         f"detect_model_limit_{self.model}_{self.id}",
                         self.detect_model_limit,
                         force=True,
@@ -328,7 +328,7 @@ class OpenAIAgent(Agent):
             
             # 获取最大可用token数（保留buffer）
             if self.max_tokens == 0:
-                task_manager.submit_task(
+                submit_async_task(
                     f"detect_model_limit_{self.model}_{self.id}",
                     self.detect_model_limit,
                     force=True,

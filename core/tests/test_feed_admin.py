@@ -295,16 +295,18 @@ class FeedAdminDisplayMethodsTest(TestCase):
             log="Test log content",
         )
 
-    @patch("core.tasks.task_manager.task_manager.submit_task")
+    @patch("core.admin.feed_admin.submit_async_task")
     def test_submit_feed_update_task(self, mock_submit_task):
         """Test _submit_feed_update_task method (lines 190-193)."""
-        mock_submit_task.return_value = "task-123"
+        mock_submit_task.return_value = MagicMock(id="task-123")
 
         self.admin._submit_feed_update_task(self.feed)
 
-        mock_submit_task.assert_called_once()
-        args = mock_submit_task.call_args
-        self.assertEqual(args[0][0], f"update_feed_{self.feed.slug}")
+        mock_submit_task.assert_called_once_with(
+            f"update_feed_{self.feed.slug}",
+            "core.jobs.update_single_feed_job",
+            self.feed.id,
+        )
 
     def test_simple_update_frequency_cases(self):
         """Test simple_update_frequency for different time intervals."""
@@ -544,7 +546,7 @@ class FeedAdminDisplayMethodsTest(TestCase):
         result = self.admin.show_filters(self.feed)
         self.assertIn("Test Filter 1", result)
         self.assertIn("Test Filter 2", result)
-        self.assertIn(f"/core/filter/{filter1.id}/change/", result)
+        self.assertIn(f"/admin/core/filter/{filter1.id}/change/", result)
 
     def test_show_filters_single_filter(self):
         """Test show_filters with single filter."""
@@ -578,7 +580,7 @@ class FeedAdminDisplayMethodsTest(TestCase):
         result = self.admin.show_tags(self.feed)
         self.assertIn("#Tag1", result)
         self.assertIn("#Tag2", result)
-        self.assertIn(f"/core/tag/{tag1.id}/change/", result)
+        self.assertIn(f"/admin/core/tag/{tag1.id}/change/", result)
 
     def test_show_tags_single_tag(self):
         """Test show_tags with single tag."""
@@ -658,7 +660,7 @@ class FeedAdminErrorHandlingTest(TestCase):
         # Verify that task submission was not attempted
         mock_on_commit.assert_not_called()
 
-    @patch("core.tasks.task_manager.task_manager.submit_task")
+    @patch("core.admin.feed_admin.submit_async_task")
     def test_submit_feed_update_task_error_handling(self, mock_submit_task):
         """Test _submit_feed_update_task handles task submission errors."""
         # Mock task submission error
@@ -685,6 +687,10 @@ class FeedAdminIntegrationTest(TestCase):
                 {
                     "fields": (
                         "feed_url",
+                        "source_kind",
+                        "source_ref",
+                        "workspace",
+                        "groups",
                         "name",
                         "max_posts",
                         "simple_update_frequency",

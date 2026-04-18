@@ -12,7 +12,7 @@
     <tbody>
     {% for agent in agents %}
       <tr>
-        <td><a href="/core/{{ agent.table_name }}/{{ agent.id }}/change/">{{ agent.name }}</a></td>
+        <td><a href="/admin/core/{{ agent.table_name }}/{{ agent.id }}/change/">{{ agent.name }}</a></td>
         <td>{{ agent.valid }}</td>
         <td>{{ agent.provider }}</td>
       </tr>

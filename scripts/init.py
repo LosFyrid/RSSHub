@@ -34,15 +34,32 @@ from pathlib import Path
 
 def create_superuser():
     from django.contrib.auth import get_user_model
+    from django.conf import settings
 
     User = get_user_model()
+    existing_user = User.objects.filter(
+        username=settings.DEFAULT_SUPERUSER_USERNAME
+    ).first()
 
-    if User.objects.count() == 0:
-        User.objects.create_superuser("admin", "admin@example.com", "rssbox")
-        print("✅ Successfully created a new superuser: admin, Password: rssbox")
+    if existing_user is None:
+        User.objects.create_superuser(
+            settings.DEFAULT_SUPERUSER_USERNAME,
+            settings.DEFAULT_SUPERUSER_EMAIL,
+            settings.DEFAULT_SUPERUSER_PASSWORD,
+        )
+        print(
+            "✅ Successfully created a new superuser: "
+            f"{settings.DEFAULT_SUPERUSER_USERNAME}"
+        )
+    elif existing_user.is_superuser:
+        print(
+            "ℹ️ Superuser already exists, but you can change the password by running "
+            f"'python manage.py changepassword {settings.DEFAULT_SUPERUSER_USERNAME}' command."
+        )
     else:
         print(
-            "ℹ️ Superuser already exists, but you can change the password by running 'python manage.py changepassword admin' command."
+            "ℹ️ A user with the default superuser username already exists, "
+            "skipping automatic superuser creation."
         )
 
 
@@ -57,23 +74,28 @@ def init_server():
     print("Starting server initialization...")
 
     try:
-        print("Collecting static files...")
-        call_command("collectstatic", interactive=False, verbosity=1)
+        if os.environ.get("RUN_COLLECTSTATIC_ON_START", "1") == "1":
+            print("Collecting static files...")
+            call_command("collectstatic", interactive=False, verbosity=1)
 
-        print("Creating migrations...")
-        call_command("makemigrations", verbosity=1)
+        if os.environ.get("RUN_MAKEMIGRATIONS_ON_START", "1") == "1":
+            print("Creating migrations...")
+            call_command("makemigrations", verbosity=1)
 
-        print("Running migrations...")
-        call_command("migrate", verbosity=0, interactive=False)
+        if os.environ.get("RUN_MIGRATIONS_ON_START", "1") == "1":
+            print("Running migrations...")
+            call_command("migrate", verbosity=0, interactive=False)
 
-        print("Creating default superuser...")
-        create_superuser()
+        if os.environ.get("RUN_CREATE_SUPERUSER_ON_START", "1") == "1":
+            print("Creating default superuser...")
+            create_superuser()
 
-        print("Compiling messages...")
-        try:
-            call_command("compilemessages", verbosity=0)
-        except Exception as e:
-            print(f"Warning: Failed to compile messages: {e}")
+        if os.environ.get("RUN_COMPILEMESSAGES_ON_START", "1") == "1":
+            print("Compiling messages...")
+            try:
+                call_command("compilemessages", verbosity=0)
+            except Exception as e:
+                print(f"Warning: Failed to compile messages: {e}")
 
         print("Server initialization completed successfully!")
 

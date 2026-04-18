@@ -1,23 +1,60 @@
-from django.test import TestCase, RequestFactory
+from django.test import TestCase, RequestFactory, Client
 from django.http import Http404, JsonResponse
 from unittest.mock import patch, MagicMock
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.urls import reverse
+from django.core.management import call_command
 from django.contrib.messages.storage.fallback import FallbackStorage
+from django.contrib.auth.models import User
 import io
 import json
 
-from ..models import Feed, Tag
-from ..views import rss, tag as tag_view, import_opml
+from ..models import Feed, Tag, Workspace, FeedGroup, WorkspaceMembership
+from ..views import (
+    rss,
+    tag as tag_view,
+    import_opml,
+    workspace_feed,
+    group_feed,
+    hub_login,
+    hub_dashboard,
+    hub_create_feed,
+    hub_bulk_export,
+    hub_bulk_edit,
+    hub_set_preferences,
+    hub_change_password,
+    hub_update_feed,
+    hub_update_workspace_providers,
+    hub_create_workspace_user,
+    hub_update_workspace_member,
+    hub_remove_workspace_member,
+)
+from core.models.agent import OpenAIAgent
 
 
 class ViewsTestCase(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
+        self.client = Client()
+        self.workspace = Workspace.get_default()
         self.feed = Feed.objects.create(
-            name="Test Feed", feed_url="https://example.com/rss.xml", slug="test-feed"
+            workspace=self.workspace,
+            name="Test Feed",
+            feed_url="https://example.com/rss.xml",
+            slug="test-feed",
         )
         self.tag = Tag.objects.create(name="Test Tag", slug="test-tag")
+        self.group = FeedGroup.objects.create(workspace=self.workspace, name="Karpathy")
+        self.feed.groups.add(self.group)
+        self.agent = OpenAIAgent.objects.create(
+            name="Hub Agent", api_key="key", valid=True
+        )
+        self.user = User.objects.create_user("hub-user", password="password123")
+        WorkspaceMembership.objects.create(
+            user=self.user,
+            workspace=self.workspace,
+            role=WorkspaceMembership.OWNER,
+        )
 
     def _create_opml_file(self, content, filename="test.opml"):
         """Helper method to create OPML file for testing."""
@@ -32,10 +69,15 @@ class ViewsTestCase(TestCase):
 
     def _setup_request_with_messages(self, request):
         """Helper method to setup request with messages."""
-        setattr(request, "session", "session")
+        setattr(request, "session", {})
         messages = FallbackStorage(request)
         setattr(request, "_messages", messages)
         return messages
+
+    def _setup_hub_request(self, request):
+        self._setup_request_with_messages(request)
+        request.user = self.user
+        return request
 
     @patch("core.views.cache")
     @patch("core.views.cache_rss")
@@ -91,7 +133,14 @@ class ViewsTestCase(TestCase):
         </opml>
         """
         opml_file = self._create_opml_file(opml_content, "feeds.opml")
-        request = self.factory.post("/fake-url", {"opml_file": opml_file})
+        request = self.factory.post(
+            "/fake-url",
+            {
+                "opml_file": opml_file,
+                "workspace": str(self.workspace.id),
+                "create_groups_from_outlines": "on",
+            },
+        )
         messages = self._setup_request_with_messages(request)
 
         initial_feed_count = Feed.objects.count()
@@ -117,7 +166,14 @@ class ViewsTestCase(TestCase):
         </opml>
         """
         opml_file = self._create_opml_file(opml_content, "nested.opml")
-        request = self.factory.post("/fake-url", {"opml_file": opml_file})
+        request = self.factory.post(
+            "/fake-url",
+            {
+                "opml_file": opml_file,
+                "workspace": str(self.workspace.id),
+                "create_groups_from_outlines": "on",
+            },
+        )
         self._setup_request_with_messages(request)
 
         import_opml(request)
@@ -127,12 +183,19 @@ class ViewsTestCase(TestCase):
         )
         new_feed = Feed.objects.get(feed_url="http://example.com/technews.xml")
         self.assertTrue(new_feed.tags.filter(name="News").exists())
+        self.assertTrue(new_feed.groups.filter(name="News").exists())
 
     def test_import_opml_invalid_file(self):
         """Test importing an invalid OPML file (missing body)."""
         opml_content = "<opml version='2.0'><head></head></opml>"
         opml_file = self._create_opml_file(opml_content, "invalid.opml")
-        request = self.factory.post("/fake-url", {"opml_file": opml_file})
+        request = self.factory.post(
+            "/fake-url",
+            {
+                "opml_file": opml_file,
+                "workspace": str(self.workspace.id),
+            },
+        )
         messages = self._setup_request_with_messages(request)
 
         initial_feed_count = Feed.objects.count()
@@ -279,7 +342,10 @@ class ViewsTestCase(TestCase):
         mock_file = MagicMock()
         mock_file.name = "test.txt"
 
-        request = self.factory.post("/fake-url", {"opml_file": mock_file})
+        request = self.factory.post(
+            "/fake-url",
+            {"opml_file": mock_file, "workspace": str(self.workspace.id)},
+        )
         messages = self._setup_request_with_messages(request)
 
         response = import_opml(request)
@@ -292,7 +358,10 @@ class ViewsTestCase(TestCase):
         """Test the import_opml view with XML syntax error."""
         invalid_xml = "<opml version='2.0'><body><outline>"
         opml_file = self._create_opml_file(invalid_xml, "invalid.opml")
-        request = self.factory.post("/fake-url", {"opml_file": opml_file})
+        request = self.factory.post(
+            "/fake-url",
+            {"opml_file": opml_file, "workspace": str(self.workspace.id)},
+        )
         messages = self._setup_request_with_messages(request)
 
         initial_feed_count = Feed.objects.count()
@@ -311,7 +380,10 @@ class ViewsTestCase(TestCase):
         </opml>
         """
         opml_file = self._create_opml_file(opml_content, "feeds.opml")
-        request = self.factory.post("/fake-url", {"opml_file": opml_file})
+        request = self.factory.post(
+            "/fake-url",
+            {"opml_file": opml_file, "workspace": str(self.workspace.id)},
+        )
         messages = self._setup_request_with_messages(request)
 
         # Mock Feed.objects.get_or_create to raise an exception
@@ -338,7 +410,14 @@ class ViewsTestCase(TestCase):
         </opml>
         """
         opml_file = self._create_opml_file(opml_content, "with_tags.opml")
-        request = self.factory.post("/fake-url", {"opml_file": opml_file})
+        request = self.factory.post(
+            "/fake-url",
+            {
+                "opml_file": opml_file,
+                "workspace": str(self.workspace.id),
+                "create_groups_from_outlines": "on",
+            },
+        )
         self._setup_request_with_messages(request)
 
         initial_feed_count = Feed.objects.count()
@@ -352,3 +431,379 @@ class ViewsTestCase(TestCase):
         new_feed = Feed.objects.get(feed_url="http://example.com/tech.xml")
         new_tag = Tag.objects.get(name="Technology")
         self.assertTrue(new_feed.tags.filter(name="Technology").exists())
+
+    @patch("core.views.cache")
+    @patch("core.views.cache_workspace")
+    def test_workspace_feed_found(self, mock_cache_workspace, mock_cache):
+        mock_cache.get.return_value = None
+        mock_cache_workspace.return_value = (
+            "<rss><channel><title>Workspace Feed</title></channel></rss>"
+        )
+
+        request = self.factory.get(f"/rss/workspace/{self.workspace.slug}")
+        response = workspace_feed(request, self.workspace.slug)
+
+        self.assertEqual(response.status_code, 200)
+        mock_cache_workspace.assert_called_once_with(self.workspace.slug, "t", "xml")
+
+    @patch("core.views.cache")
+    @patch("core.views.cache_group")
+    def test_group_feed_found(self, mock_cache_group, mock_cache):
+        mock_cache.get.return_value = None
+        mock_cache_group.return_value = (
+            "<rss><channel><title>Group Feed</title></channel></rss>"
+        )
+
+        request = self.factory.get(f"/rss/group/{self.workspace.slug}/{self.group.slug}")
+        response = group_feed(request, self.workspace.slug, self.group.slug)
+
+        self.assertEqual(response.status_code, 200)
+        mock_cache_group.assert_called_once_with(
+            self.workspace.slug, self.group.slug, "t", "xml"
+        )
+
+    def test_hub_dashboard_renders(self):
+        request = self.factory.get("/?source_kind=translate")
+        self._setup_hub_request(request)
+        request.session["hub_theme"] = "dark"
+        response = hub_dashboard(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"RSS Hub", response.content)
+        self.assertIn("\u8ba2\u9605\u603b\u89c8".encode("utf-8"), response.content)
+        self.assertIn(b'data-theme="dark"', response.content)
+        self.assertIn(
+            b'id="bulk-mode-panel" class="bulk-mode-panel is-hidden"',
+            response.content,
+        )
+
+    def test_hub_dashboard_redirects_when_anonymous(self):
+        request = self.factory.get("/")
+        self._setup_request_with_messages(request)
+        request.user = type("Anonymous", (), {"is_authenticated": False})()
+        response = hub_dashboard(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login/?next=%2F", response.url)
+
+    def test_hub_login_renders(self):
+        request = self.factory.get("/login/")
+        self._setup_request_with_messages(request)
+        request.user = type("Anonymous", (), {"is_authenticated": False})()
+        response = hub_login(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("登录".encode("utf-8"), response.content)
+
+    def test_hub_create_feed(self):
+        request = self.factory.post(
+            "/feeds/create/",
+            {
+                "workspace": self.workspace.id,
+                "feed_url": "https://example.com/hub-created.xml",
+                "name": "Hub Created",
+                "groups": [self.group.id],
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_create_feed(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Feed.objects.filter(feed_url="https://example.com/hub-created.xml").exists())
+
+    def test_hub_bulk_export_links(self):
+        request = self.factory.post(
+            "/feeds/bulk-export/",
+            {
+                "selected_feeds": str(self.feed.id),
+                "export_variant": "proxy",
+                "export_format": "links",
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_bulk_export(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/plain; charset=utf-8")
+        self.assertIn(f"/rss/proxy/{self.feed.slug}".encode(), response.content)
+
+    def test_hub_bulk_export_opml(self):
+        request = self.factory.post(
+            "/feeds/bulk-export/",
+            {
+                "selected_feeds": str(self.feed.id),
+                "export_variant": "translated",
+                "export_format": "opml",
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_bulk_export(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/xml")
+        self.assertIn(b"/rss/test-feed", response.content)
+
+    def test_hub_update_feed(self):
+        request = self.factory.post(
+            f"/feeds/{self.feed.id}/update/",
+            {
+                "name": "Renamed Feed",
+                "groups": [self.group.id],
+                "tags": [],
+                "target_language": "English",
+                "translate_title": "on",
+                "translate_content": "on",
+                "summary": "",
+                "fetch_article": "",
+                "max_posts": 20,
+                "update_frequency": 30,
+                "translation_display": 1,
+                "translator_option": "",
+                "summarizer": "",
+                "summary_detail": "",
+                "additional_prompt": "Keep product names in English",
+                "is_archived": "on",
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_update_feed(request, self.feed.id)
+        self.assertEqual(response.status_code, 302)
+        self.feed.refresh_from_db()
+        self.assertEqual(self.feed.name, "Renamed Feed")
+        self.assertEqual(self.feed.translation_display, 1)
+        self.assertTrue(self.feed.is_archived)
+
+    def test_hub_bulk_edit_archives_feed(self):
+        request = self.factory.post(
+            "/feeds/bulk-edit/",
+            {
+                "selected_feeds": str(self.feed.id),
+                "group_mode": "keep",
+                "groups": [],
+                "tag_mode": "keep",
+                "tags": [],
+                "provider_mode": "keep",
+                "translator_option": "",
+                "summarizer": "",
+                "translation_display": "",
+                "record_action": "archive",
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_bulk_edit(request)
+        self.assertEqual(response.status_code, 302)
+        self.feed.refresh_from_db()
+        self.assertTrue(self.feed.is_archived)
+
+    def test_hub_update_workspace_providers(self):
+        from django.contrib.contenttypes.models import ContentType
+
+        ct = ContentType.objects.get_for_model(OpenAIAgent)
+        request = self.factory.post(
+            "/workspaces/providers/",
+            {
+                "workspace": self.workspace.id,
+                "default_target_language": "English",
+                "default_translator_option": f"{ct.id}:{self.agent.id}",
+                "default_summarizer": self.agent.id,
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_update_workspace_providers(request)
+        self.assertEqual(response.status_code, 302)
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.default_target_language, "English")
+        self.assertEqual(self.workspace.default_summarizer_id, self.agent.id)
+
+    def test_hub_set_preferences(self):
+        request = self.factory.post(
+            "/preferences/",
+            {
+                "ui_language": "en-us",
+                "theme": "dark",
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_set_preferences(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(request.session["hub_ui_language"], "en-us")
+        self.assertEqual(request.session["hub_theme"], "dark")
+
+    def test_hub_change_password(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("hub:change_password"),
+            {
+                "old_password": "password123",
+                "new_password1": "new-password-123",
+                "new_password2": "new-password-123",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("new-password-123"))
+
+    def test_hub_create_workspace_user(self):
+        request = self.factory.post(
+            "/workspaces/members/create/",
+            {
+                "workspace_slug": self.workspace.slug,
+                "username": "member-two",
+                "email": "member-two@example.com",
+                "first_name": "Two",
+                "last_name": "Member",
+                "password1": "member-two-pass",
+                "password2": "member-two-pass",
+                "role": WorkspaceMembership.VIEWER,
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_create_workspace_user(request)
+        self.assertEqual(response.status_code, 302)
+        created_user = User.objects.get(username="member-two")
+        self.assertTrue(
+            WorkspaceMembership.objects.filter(
+                user=created_user,
+                workspace=self.workspace,
+                role=WorkspaceMembership.VIEWER,
+            ).exists()
+        )
+
+    def test_hub_dashboard_workspace_switcher_only_shows_accessible_workspaces(self):
+        other_workspace = Workspace.objects.create(name="Other Workspace")
+        request = self.factory.get("/?workspace=other-workspace")
+        self._setup_hub_request(request)
+        response = hub_dashboard(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(self.workspace.name.encode("utf-8"), response.content)
+        self.assertNotIn(other_workspace.name.encode("utf-8"), response.content)
+        self.assertIn("当前 Workspace".encode("utf-8"), response.content)
+
+    def test_owner_dashboard_member_create_form_includes_owner_role(self):
+        request = self.factory.get("/")
+        self._setup_hub_request(request)
+        response = hub_dashboard(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'<option value="owner">Owner</option>', response.content)
+
+    def test_manager_dashboard_member_create_form_excludes_owner_role(self):
+        membership = self.user.workspace_memberships.get(workspace=self.workspace)
+        membership.role = WorkspaceMembership.MANAGER
+        membership.save(update_fields=["role", "updated_at"])
+        request = self.factory.get("/")
+        self._setup_hub_request(request)
+        response = hub_dashboard(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(b'<option value="owner">Owner</option>', response.content)
+
+    def test_hub_update_workspace_member_role(self):
+        member = User.objects.create_user("member-edit", password="password123")
+        membership = WorkspaceMembership.objects.create(
+            user=member,
+            workspace=self.workspace,
+            role=WorkspaceMembership.VIEWER,
+        )
+        request = self.factory.post(
+            f"/workspaces/members/{membership.id}/role/",
+            {"role": WorkspaceMembership.MANAGER},
+        )
+        self._setup_hub_request(request)
+        response = hub_update_workspace_member(request, membership.id)
+        self.assertEqual(response.status_code, 302)
+        membership.refresh_from_db()
+        self.assertEqual(membership.role, WorkspaceMembership.MANAGER)
+
+    def test_hub_remove_workspace_member(self):
+        member = User.objects.create_user("member-remove", password="password123")
+        membership = WorkspaceMembership.objects.create(
+            user=member,
+            workspace=self.workspace,
+            role=WorkspaceMembership.VIEWER,
+        )
+        request = self.factory.post(f"/workspaces/members/{membership.id}/remove/")
+        self._setup_hub_request(request)
+        response = hub_remove_workspace_member(request, membership.id)
+        self.assertEqual(response.status_code, 302)
+        membership.refresh_from_db()
+        self.assertFalse(membership.is_active)
+
+    def test_hub_prevents_removing_last_owner(self):
+        request = self.factory.post(
+            f"/workspaces/members/{self.user.workspace_memberships.get(workspace=self.workspace).id}/remove/"
+        )
+        self._setup_hub_request(request)
+        response = hub_remove_workspace_member(
+            request,
+            self.user.workspace_memberships.get(workspace=self.workspace).id,
+        )
+        self.assertEqual(response.status_code, 302)
+        membership = self.user.workspace_memberships.get(workspace=self.workspace)
+        self.assertTrue(membership.is_active)
+
+    def test_manager_can_manage_non_owner_members(self):
+        owner_membership = self.user.workspace_memberships.get(workspace=self.workspace)
+        owner_membership.role = WorkspaceMembership.MANAGER
+        owner_membership.save(update_fields=["role", "updated_at"])
+        member = User.objects.create_user("member-no-manage", password="password123")
+        membership = WorkspaceMembership.objects.create(
+            user=member,
+            workspace=self.workspace,
+            role=WorkspaceMembership.VIEWER,
+        )
+        request = self.factory.post(
+            f"/workspaces/members/{membership.id}/role/",
+            {"role": WorkspaceMembership.MANAGER},
+        )
+        self._setup_hub_request(request)
+        response = hub_update_workspace_member(request, membership.id)
+        self.assertEqual(response.status_code, 302)
+        membership.refresh_from_db()
+        self.assertEqual(membership.role, WorkspaceMembership.MANAGER)
+
+    def test_manager_cannot_manage_owner_member(self):
+        owner_membership = self.user.workspace_memberships.get(workspace=self.workspace)
+        owner_membership.role = WorkspaceMembership.MANAGER
+        owner_membership.save(update_fields=["role", "updated_at"])
+        target_owner = User.objects.create_user("owner-two", password="password123")
+        target_membership = WorkspaceMembership.objects.create(
+            user=target_owner,
+            workspace=self.workspace,
+            role=WorkspaceMembership.OWNER,
+        )
+        request = self.factory.post(
+            f"/workspaces/members/{target_membership.id}/role/",
+            {"role": WorkspaceMembership.VIEWER},
+        )
+        self._setup_hub_request(request)
+        response = hub_update_workspace_member(request, target_membership.id)
+        self.assertEqual(response.status_code, 302)
+        target_membership.refresh_from_db()
+        self.assertEqual(target_membership.role, WorkspaceMembership.OWNER)
+
+
+class DigestGeneratorCommandTestCase(TestCase):
+    def setUp(self):
+        self.agent = OpenAIAgent.objects.create(
+            name="Digest Agent",
+            api_key="key",
+            valid=True,
+        )
+
+    @patch("core.management.commands.digest_generator.DigestGenerator")
+    def test_digest_generator_filters_publish_days_without_backend_specific_sql(self, mock_generator):
+        from core.models import Digest
+
+        saturday_digest = Digest.objects.create(
+            name="Saturday Digest",
+            summarizer=self.agent,
+            publish_days=["saturday"],
+            is_active=True,
+        )
+        Digest.objects.create(
+            name="Sunday Digest",
+            summarizer=self.agent,
+            publish_days=["sunday"],
+            is_active=True,
+        )
+        mock_generator.return_value.generate.return_value = {
+            "success": True,
+            "articles_processed": 0,
+        }
+
+        call_command("digest_generator", "--publish-days", "saturday")
+
+        mock_generator.assert_called_once_with(saturday_digest)

@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: rss-hub
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - redis-config.yaml
+  - secret-template.yaml
+  - postgres-auth-secret-template.yaml
+  - redis-auth-secret-template.yaml
+  - postgres-cluster.yaml
+  - redis.yaml
+  - web-deployment.yaml
+  - worker-deployment.yaml
+  - service.yaml
+  - httproute.yaml
+  - cronjobs.yaml

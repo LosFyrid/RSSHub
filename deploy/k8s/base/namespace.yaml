@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rss-hub
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/part-of: rss-hub
+    gateway.pic-aichem.online/core-service-gateway: "true"

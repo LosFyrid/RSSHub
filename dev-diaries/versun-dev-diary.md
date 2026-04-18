@@ -1,3 +1,25 @@
+# 2026-04-18
+当前这一轮不是继续堆“后台字段”，而是把项目往真正可用的多用户工具推进。
+
+已经确认两件事：
+- GitHub fine-grained token 的 `contents` 权限问题已经修复，直接调 GitHub API 和 `git ls-remote` 都通过了
+- Flux 侧后续失败已经变成 source-controller 到 GitHub 的 443 超时，更像集群网络瞬时抖动，不再是 token 权限问题
+
+产品侧这轮先定几个边界，避免越做越散：
+- 管理 UI 需要登录
+- 不接现有 IAM，不做邮箱验证，直接用 Django auth + 本项目自己的 pg 管用户密码
+- `workspace` 作为轻量组织边界，用 membership + role 做多租户
+- 这阶段先不把 RSS/OPML 订阅链接私有化，Reader 之类现有用法不能被破坏
+- UI 语言和 feed 输出语言严格拆开
+- 文案要去“开发者味”，一些解释应该进文档，不应该堆在界面上
+
+预期这轮会补：
+1. hub 登录入口和访问控制
+2. workspace membership 模型
+3. feed/group/provider 等 hub 视图的 workspace scope
+4. hub UX 文案和信息层级收敛
+5. 对应测试补齐
+
 # 2025-9-21
 还是想前后端分离开发，django的前端模块实在是太难用了，计划如下：
 1. 先用svelte写一个前端
@@ -218,3 +240,10 @@ t_feed_force_update不应该调用revoke_tasks_by_arg，因为它是通过update
 o_feed_force_update也不用revoke_tasks_by_arg，直接放在update_original_feed task更方便直观，否则task完全不知道可能会在哪里被revoke掉
 
 新发布的版本，还是先发布pre release，push到docker dev标签，自己先测试一段时间再push到latest
+## 2026-04-18 下午补记
+
+- 完成 hub 成员管理第二轮：补上成员角色修改、成员移除，以及至少保留一个激活 owner 的保护。
+- 将当前 workspace 切换器提到 dashboard 顶部，强调“只能在已加入的 workspace 中切换”，并明确公开 RSS / OPML URL 仍保持公开。
+- 梳理了 manager / owner 的权限边界：owner 可完整管理成员，manager 可管理非 owner 成员但不能动 owner，也不能授予 owner。
+- 只读检查 `rss-hub` namespace 后确认 `rss-hub-digest-generator-saturday-*` 是摘要 CronJob 的失败历史任务，不是无用垃圾对象。
+- 定位失败原因为 `digest_generator` 使用 SQLite 风格 JSON SQL，迁到 PostgreSQL 后在 psycopg 上触发占位符错误；已在源码中改为跨数据库的 Python 过滤逻辑，并补了测试。

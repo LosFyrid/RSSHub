@@ -278,8 +278,7 @@ class DigestAdmin(admin.ModelAdmin):
     @admin.display(description=_("Generate selected Digests"))
     def generate_digest_action(self, request, queryset):
         """Generate digests for selected items."""
-        from core.tasks.generate_digests import DigestGenerator
-        from core.tasks.task_manager import task_manager
+        from core.tasks.async_jobs import submit_async_task
         import time
 
         # Only process active digests
@@ -300,11 +299,13 @@ class DigestAdmin(admin.ModelAdmin):
             try:
                 # Generate unique task name
                 task_name = f"digest_generation_{digest.id}_{int(time.time())}"
-                digest_generator = DigestGenerator(digest)
-                # Submit task to background execution
                 digest.status = None
                 digest.save()
-                future = task_manager.submit_task(task_name, digest_generator.generate)
+                submit_async_task(
+                    task_name,
+                    "core.jobs.generate_digest_job",
+                    digest.id,
+                )
 
                 success_count += 1
 

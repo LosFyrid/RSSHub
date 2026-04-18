@@ -34,7 +34,7 @@ class TagAdminTestCase(TestCase):
 
         self.assertIn("Filter 1", result)
         self.assertIn("Filter 2", result)
-        self.assertIn("/core/filter/", result)
+        self.assertIn("/admin/core/filter/", result)
         self.assertIn("<br>", result)
 
     def test_show_url_method(self):

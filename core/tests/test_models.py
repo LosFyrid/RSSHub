@@ -841,9 +841,9 @@ class OpenAIAgentModelTest(TestCase):
         self.assertEqual(self.agent.model, "gpt-test")
         self.assertTrue(self.agent.is_ai)
 
-    @patch("core.models.agent.task_manager")
+    @patch("core.models.agent.submit_async_task")
     @patch("core.models.agent.OpenAI")
-    def test_validate_success(self, mock_openai_class, mock_task_manager):
+    def test_validate_success(self, mock_openai_class, mock_submit_async_task):
         """Test the validate method with a successful API call."""
         mock_client = MagicMock()
         mock_completion = MagicMock()
@@ -853,8 +853,7 @@ class OpenAIAgentModelTest(TestCase):
         )
         mock_openai_class.return_value = mock_client
 
-        # Mock task_manager.submit_task
-        mock_task_manager.submit_task.return_value = None
+        mock_submit_async_task.return_value = None
 
         is_valid = self.agent.validate()
 
@@ -863,11 +862,15 @@ class OpenAIAgentModelTest(TestCase):
         self.assertEqual(self.agent.log, "")
         # max_tokens should remain 0 since the background task hasn't completed
         self.assertEqual(self.agent.max_tokens, 0)
-        mock_task_manager.submit_task.assert_called_once()
+        mock_submit_async_task.assert_called_once_with(
+            f"detect_model_limit_{self.agent.model}_{self.agent.id}",
+            self.agent.detect_model_limit,
+            force=True,
+        )
 
-    @patch("core.models.agent.task_manager")
+    @patch("core.models.agent.submit_async_task")
     @patch("core.models.agent.OpenAI")
-    def test_validate_failure(self, mock_openai_class, mock_task_manager):
+    def test_validate_failure(self, mock_openai_class, mock_submit_async_task):
         """Test the validate method with a failed API call."""
         mock_client = MagicMock()
         mock_client.with_options().chat.completions.create.side_effect = Exception(
@@ -880,13 +883,13 @@ class OpenAIAgentModelTest(TestCase):
         self.assertFalse(is_valid)
         self.agent.refresh_from_db()
         self.assertIn("API Error", self.agent.log)
-        # task_manager should not be called when API call fails
-        mock_task_manager.submit_task.assert_not_called()
+        # async task should not be called when API call fails
+        mock_submit_async_task.assert_not_called()
 
-    @patch("core.models.agent.task_manager")
+    @patch("core.models.agent.submit_async_task")
     @patch("core.models.agent.OpenAI")
     def test_validate_does_not_overwrite_newer_prompt_changes(
-        self, mock_openai_class, mock_task_manager
+        self, mock_openai_class, mock_submit_async_task
     ):
         """Validation should not write stale prompt fields back to the database."""
         stale_agent = OpenAIAgent.objects.get(pk=self.agent.pk)
@@ -909,7 +912,7 @@ class OpenAIAgentModelTest(TestCase):
         self.agent.refresh_from_db()
         self.assertEqual(self.agent.title_translate_prompt, updated_prompt)
         self.assertTrue(self.agent.valid)
-        mock_task_manager.submit_task.assert_called_once()
+        mock_submit_async_task.assert_called_once()
 
     @patch.object(OpenAIAgent, "completions")
     def test_translate_method(self, mock_completions):
@@ -2041,7 +2044,7 @@ class AgentBaseClassTest(TestCase):
     @patch.object(OpenAIAgent, "_init")
     @patch.object(OpenAIAgent, "_wait_for_rate_limit")
     @patch("core.models.agent.get_token_count")
-    @patch("core.models.agent.task_manager.submit_task")
+    @patch("core.models.agent.submit_async_task")
     def test_agent_no_max_tokens_error(
         self, mock_submit_task, mock_get_token_count, mock_wait, mock_init
     ):

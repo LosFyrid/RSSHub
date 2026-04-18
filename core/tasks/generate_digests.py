@@ -326,11 +326,12 @@ def _ensure_entries_have_translated_titles(digest: Digest):
                 continue
 
             # No existing translation - determine translator
-            if not feed.translator:
+            effective_translator = feed.get_effective_translator()
+            if not effective_translator:
                 use_digest_summarizer = True
                 translator = digest.summarizer
             else:
-                translator = feed.translator
+                translator = effective_translator
 
             # Determine what title to use based on language match
             if feed.target_language == digest.target_language:
@@ -452,8 +453,9 @@ def _ensure_entries_have_summaries(digest: Digest):
     for idx, entry in enumerate(entries_without_summary):
         try:
             # Determine which summarizer to use
-            if entry.feed.summarizer:
-                summarizer = entry.feed.summarizer
+            effective_summarizer = entry.feed.get_effective_summarizer()
+            if effective_summarizer:
+                summarizer = effective_summarizer
                 target_language = entry.feed.target_language
                 summary_detail = entry.feed.summary_detail or 0.0
             elif digest.summarizer:

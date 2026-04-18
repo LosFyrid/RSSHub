@@ -3,7 +3,12 @@ from django.test import TestCase
 import uuid
 
 from core.forms.feed_form import FeedForm
-from core.models import Feed
+from core.forms.hub_forms import (
+    HubFeedCreateForm,
+    HubFeedEditForm,
+    HubWorkspaceProviderForm,
+)
+from core.models import Feed, Workspace, FeedGroup
 from core.models.agent import OpenAIAgent
 
 
@@ -14,6 +19,8 @@ class FeedFormTest(TestCase):
         self.agent = OpenAIAgent.objects.create(
             name=f"Test Agent {uuid.uuid4()}", api_key="key", valid=True
         )
+        self.workspace = Workspace.get_default()
+        self.group = FeedGroup.objects.create(workspace=self.workspace, name="Karpathy")
         self.ct = ContentType.objects.get_for_model(OpenAIAgent)
         self.agent_value = f"{self.ct.id}:{self.agent.id}"
 
@@ -21,6 +28,7 @@ class FeedFormTest(TestCase):
         """Test form initial values and save processing."""
         # Test initial values for existing instance
         feed = Feed.objects.create(
+            workspace=self.workspace,
             feed_url="https://example.com/rss.xml",
             update_frequency=15,
             translate_title=True,
@@ -53,6 +61,9 @@ class FeedFormTest(TestCase):
             "summary": False,
             "translator_option": self.agent_value,
             # summary_engine_option 字段不存在，已删除
+            "workspace": self.workspace.id,
+            "groups": [self.group.id],
+            "source_kind": Feed.STANDARD,
             "target_language": "English",
             "summarizer": self.agent.id,
         }
@@ -68,3 +79,54 @@ class FeedFormTest(TestCase):
         assert saved_feed.translator_content_type_id == self.ct.id
         assert saved_feed.translator_object_id == self.agent.id
         assert saved_feed.summarizer_id == self.agent.id
+        assert saved_feed.workspace_id == self.workspace.id
+        assert self.group in saved_feed.groups.all()
+
+    def test_hub_feed_create_form_defaults_to_translate(self):
+        form = HubFeedCreateForm()
+        self.assertNotIn("source_kind", form.fields)
+
+        form = HubFeedCreateForm(
+            data={
+                "workspace": self.workspace.id,
+                "feed_url": "https://example.com/new.xml",
+                "name": "New Feed",
+                "groups": [self.group.id],
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        feed = form.save()
+        self.assertEqual(feed.source_kind, Feed.TRANSLATE)
+        self.assertEqual(feed.target_language, self.workspace.default_target_language)
+        self.assertTrue(feed.translate_title)
+        self.assertTrue(feed.translate_content)
+
+    def test_workspace_provider_form_saves_defaults(self):
+        form = HubWorkspaceProviderForm(
+            data={
+                "workspace": self.workspace.id,
+                "default_target_language": "English",
+                "default_translator_option": self.agent_value,
+                "default_summarizer": self.agent.id,
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        workspace = form.save()
+        self.assertEqual(workspace.default_target_language, "English")
+        self.assertEqual(workspace.default_summarizer_id, self.agent.id)
+        self.assertEqual(
+            workspace.default_translator_content_type_id,
+            self.ct.id,
+        )
+        self.assertEqual(workspace.default_translator_object_id, self.agent.id)
+
+    def test_hub_feed_edit_form_uses_workspace_scoped_groups(self):
+        other_workspace = Workspace.objects.create(name="Other Workspace")
+        FeedGroup.objects.create(workspace=other_workspace, name="Elsewhere")
+        feed = Feed.objects.create(
+            workspace=self.workspace,
+            feed_url="https://example.com/edit.xml",
+        )
+        form = HubFeedEditForm(instance=feed)
+        group_names = list(form.fields["groups"].queryset.values_list("name", flat=True))
+        self.assertEqual(group_names, ["Karpathy"])

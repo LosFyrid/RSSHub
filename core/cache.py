@@ -5,7 +5,7 @@ from django.conf import settings
 from lxml import etree
 import mistune
 from feedgen.feed import FeedGenerator
-from core.models import Feed, Entry, Tag
+from core.models import Feed, Entry, Tag, FeedGroup, Workspace
 from utils.text_handler import set_translation_display
 
 from .models import Feed
@@ -77,6 +77,42 @@ def cache_digest(slug: str, format: str = "xml"):
     ttl = digest_feed.update_frequency or 86400
     cache.set(cache_key, atom_feed, ttl)
     logger.debug(f"Cached successfully with key {cache_key}")
+    return atom_feed
+
+
+def cache_group(workspace_slug: str, group_slug: str, feed_type="t", format="xml"):
+    cache_key = f"cache_group_{workspace_slug}_{group_slug}_{feed_type}_{format}"
+    group = FeedGroup.objects.get(workspace__slug=workspace_slug, slug=group_slug)
+    feeds = group.feeds.filter(is_archived=False)
+    atom_feed = merge_feeds_into_one_atom(
+        f"{group.workspace.name} / {group.name}",
+        feeds,
+        feed_type,
+    )
+    if not atom_feed:
+        return None
+    max_frequency_feed = feeds.order_by("-update_frequency").first()
+    cache.set(
+        cache_key,
+        atom_feed,
+        max_frequency_feed.update_frequency if max_frequency_feed else 86400,
+    )
+    return atom_feed
+
+
+def cache_workspace(workspace_slug: str, feed_type="t", format="xml"):
+    cache_key = f"cache_workspace_{workspace_slug}_{feed_type}_{format}"
+    workspace = Workspace.objects.get(slug=workspace_slug)
+    feeds = workspace.feeds.filter(is_archived=False)
+    atom_feed = merge_feeds_into_one_atom(workspace.name, feeds, feed_type)
+    if not atom_feed:
+        return None
+    max_frequency_feed = feeds.order_by("-update_frequency").first()
+    cache.set(
+        cache_key,
+        atom_feed,
+        max_frequency_feed.update_frequency if max_frequency_feed else 86400,
+    )
     return atom_feed
 
 
@@ -203,11 +239,12 @@ def generate_atom_feed(feed: Feed, feed_type="t"):
         return None
 
 
-def merge_feeds_into_one_atom(tag: str, feeds: list[Feed], feed_type="t"):
+def merge_feeds_into_one_atom(label: str, feeds: list[Feed], feed_type="t"):
     """合并多个Feeds生成单个Atom Feed"""
     type_str = "Original" if feed_type == "o" else "Translated"
-    feed_id = f"urn:merged-tag-{tag}-{type_str}-feeds"
-    feed_title = f"{type_str} #{tag} tag  Feeds"
+    normalized_label = label.replace(" ", "-").replace("/", "-").lower()
+    feed_id = f"urn:merged-{normalized_label}-{type_str}-feeds"
+    feed_title = f"{type_str} {label} Feeds"
 
     # 构建基础Feed
     fg = _build_atom_feed(
@@ -239,8 +276,8 @@ def merge_feeds_into_one_atom(tag: str, feeds: list[Feed], feed_type="t"):
     # 按时间降序排序（最新的在最前面）
     all_entries.sort(key=lambda x: x[0], reverse=True)
 
-    # 获取tag filter对象
-    tag_filters = Tag.objects.get(slug=tag).filters.all()
+    tag_filters = Tag.objects.filter(slug=label).first()
+    tag_filters = tag_filters.filters.all() if tag_filters else []
 
     # 开始过滤 - 使用批量查询优化性能
     if not tag_filters:

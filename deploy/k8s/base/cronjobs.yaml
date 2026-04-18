@@ -1,0 +1,643 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-feed-updater-5min
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "*/5 * * * *"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: feed-updater
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "feed_updater", "--frequency", "5 min"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-feed-updater-15min
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "*/15 * * * *"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: feed-updater
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "feed_updater", "--frequency", "15 min"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-feed-updater-30min
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "*/30 * * * *"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: feed-updater
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "feed_updater", "--frequency", "30 min"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-feed-updater-hourly
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "0 * * * *"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: feed-updater
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "feed_updater", "--frequency", "hourly"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-feed-updater-daily
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "0 1 * * *"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: feed-updater
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "feed_updater", "--frequency", "daily"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-feed-updater-weekly
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "0 2 * * 1"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: feed-updater
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "feed_updater", "--frequency", "weekly"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-digest-generator-monday
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "10 2 * * 1"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: digest-generator
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "digest_generator", "--publish-days", "monday"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-digest-generator-tuesday
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "10 2 * * 2"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: digest-generator
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "digest_generator", "--publish-days", "tuesday"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-digest-generator-wednesday
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "10 2 * * 3"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: digest-generator
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "digest_generator", "--publish-days", "wednesday"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-digest-generator-thursday
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "10 2 * * 4"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: digest-generator
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "digest_generator", "--publish-days", "thursday"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-digest-generator-friday
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "10 2 * * 5"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: digest-generator
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "digest_generator", "--publish-days", "friday"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-digest-generator-saturday
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "10 2 * * 6"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: digest-generator
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "digest_generator", "--publish-days", "saturday"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-digest-generator-sunday
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "10 2 * * 0"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: digest-generator
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "digest_generator", "--publish-days", "sunday"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rss-hub-cleanup-entries
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: scheduler
+spec:
+  schedule: "0 3 * * 1"
+  timeZone: Asia/Shanghai
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: cleanup-entries
+              image: ghcr.io/losfyrid/rsshub:latest
+              imagePullPolicy: IfNotPresent
+              args: ["python", "manage.py", "cleanup_entries"]
+              envFrom:
+                - configMapRef:
+                    name: rss-hub-config
+                - secretRef:
+                    name: rss-hub-app-secrets
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-db-auth
+                      key: password
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: rss-hub-redis-auth
+                      key: password
+                - name: REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/0"
+                - name: ASYNC_REDIS_URL
+                  value: "redis://:$(REDIS_PASSWORD)@rss-hub-redis:6379/1"
+                - name: RUN_INIT_ON_START
+                  value: "0"

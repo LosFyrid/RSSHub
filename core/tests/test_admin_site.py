@@ -37,9 +37,11 @@ class CoreAdminSiteTestCase(TestCase):
         self.assertEqual(first_app["app_label"], "core")
         # Allow optional Digest model; must at least contain Feed and Tag
         first_models = first_app["models"]
-        self.assertGreaterEqual(len(first_models), 2)
+        self.assertGreaterEqual(len(first_models), 4)
         object_names = {m.get("object_name") for m in first_models}
         self.assertIn("Feed", object_names)
+        self.assertIn("Workspace", object_names)
+        self.assertIn("FeedGroup", object_names)
         self.assertIn("Tag", object_names)
 
         # Verify model entries exist and have required fields
@@ -55,7 +57,7 @@ class CoreAdminSiteTestCase(TestCase):
         # Check Agent entry has required URL
         agent_model = second_app["models"][0]
         self.assertEqual(agent_model["name"], "Agents")
-        self.assertEqual(agent_model["admin_url"], "/agent/list")
+        self.assertEqual(agent_model["admin_url"], "/admin/agent/list")
 
 
 class AgentPaginatorTestCase(TestCase):
@@ -147,11 +149,11 @@ class AgentViewsTestCase(TestCase):
         request.user = self.user
         response = agent_add(request)
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, "/core/openaiagent/add")
+        self.assertEqual(response.url, "/admin/core/openaiagent/add")
 
         # Invalid/missing agent name
         request = self.factory.post("/agent/add", {})
         request.user = self.user
         response = agent_add(request)
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, "/core///add")
+        self.assertEqual(response.url, "/admin/")

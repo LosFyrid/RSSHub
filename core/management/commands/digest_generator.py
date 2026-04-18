@@ -47,12 +47,14 @@ class Command(BaseCommand):
             )
             sys.exit(1)
 
-        # Get digests to process based on publish_days
-        # Use JSON_EXTRACT for SQLite compatibility
-        digests = Digest.objects.filter(is_active=True).extra(
-            where=["JSON_EXTRACT(publish_days, '$') LIKE ?"],
-            params=[f"%{publish_days.lower()}%"],
-        )
+        # Keep the day filtering in Python so the command behaves the same on
+        # SQLite and PostgreSQL without relying on backend-specific JSON SQL.
+        target_day = publish_days.lower()
+        digests = [
+            digest
+            for digest in Digest.objects.filter(is_active=True)
+            if target_day in [(day or "").lower() for day in (digest.publish_days or [])]
+        ]
 
         if not digests:
             self.stdout.write(

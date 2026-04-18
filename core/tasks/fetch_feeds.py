@@ -2,6 +2,7 @@ import logging
 import time
 from django.utils import timezone
 from core.models import Feed, Entry
+from core.adapters import sync_builderpulse_feed
 from typing import Dict
 import feedparser
 from fake_useragent import UserAgent
@@ -15,6 +16,10 @@ def handle_single_feed_fetch(feed: Feed):
     """
     try:
         feed.fetch_status = None
+        if feed.source_kind == Feed.BUILDERPULSE:
+            sync_builderpulse_feed(feed)
+            return
+
         etag = feed.etag if feed.max_posts <= feed.entries.count() else ""
         fetch_results = fetch_feed(url=feed.feed_url, etag=etag)
 

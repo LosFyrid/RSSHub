@@ -55,6 +55,7 @@ def handle_feeds_translation(feeds: list, target_field: str = "title"):
 def translate_feed(feed: Feed, target_field: str = "title"):
     """Translate and summarize feed entries with memory optimizations."""
     logger.info("Translating feed: %s", feed.target_language)
+    translator = feed.get_effective_translator()
     total_tokens = 0
     total_characters = 0
     entries_to_save = []
@@ -69,7 +70,7 @@ def translate_feed(feed: Feed, target_field: str = "title"):
         translation_status = None
         try:
             logger.debug(f"Processing entry {entry}")
-            if not feed.translator:
+            if not translator:
                 raise Exception("Translate Engine Not Set")
 
             entry_needs_save = False
@@ -79,7 +80,7 @@ def translate_feed(feed: Feed, target_field: str = "title"):
                 metrics = _translate_entry_title(
                     entry=entry,
                     target_language=feed.target_language,
-                    engine=feed.translator,
+                    engine=translator,
                     user_prompt=feed.additional_prompt,
                 )
                 total_tokens += metrics["tokens"]
@@ -100,7 +101,7 @@ def translate_feed(feed: Feed, target_field: str = "title"):
                     metrics = _translate_entry_content(
                         entry=entry,
                         target_language=feed.target_language,
-                        engine=feed.translator,
+                        engine=translator,
                         user_prompt=feed.additional_prompt,
                     )
                     total_tokens += metrics["tokens"]

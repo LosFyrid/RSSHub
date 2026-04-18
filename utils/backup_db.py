@@ -3,6 +3,7 @@ import logging
 import shutil
 import datetime
 from django.conf import settings
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,13 @@ def backup_db(apps, schema_editor):
         str: 备份文件路径，如果失败则返回None
     """
     db_path = settings.DATABASES["default"]["NAME"]
+    engine = settings.DATABASES["default"].get("ENGINE", "")
+
+    if engine != "django.db.backends.sqlite3":
+        logger.info(f"Skip file backup for non-SQLite database engine: {engine}")
+        return None
+
+    db_path = str(Path(db_path))
 
     # 检查数据库文件是否存在
     if not os.path.exists(db_path):

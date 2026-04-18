@@ -1,7 +1,7 @@
 from django import forms
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
-from core.models import Feed, OpenAIAgent
+from core.models import Feed, OpenAIAgent, Workspace, FeedGroup
 from utils.modelAdmin_utils import get_all_agent_choices
 
 
@@ -66,6 +66,14 @@ class FeedForm(forms.ModelForm):
                 "placeholder": _("Optional, default use the feed title"),
             }
         )
+        self.fields["feed_url"].required = False
+        self.fields["source_ref"].required = False
+        if "workspace" in self.fields:
+            self.fields["workspace"].queryset = Workspace.objects.all().order_by("name")
+        if "groups" in self.fields:
+            self.fields["groups"].queryset = FeedGroup.objects.all().order_by(
+                "workspace__name", "name"
+            )
 
         self.fields["slug"].widget.attrs.update(
             {
@@ -77,6 +85,26 @@ class FeedForm(forms.ModelForm):
         instance = getattr(self, "instance", None)
         if instance and instance.pk:
             self._set_initial_values(instance)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        source_kind = cleaned_data.get("source_kind")
+        feed_url = cleaned_data.get("feed_url")
+        workspace = cleaned_data.get("workspace")
+        groups = cleaned_data.get("groups")
+
+        if source_kind == Feed.STANDARD and not feed_url:
+            self.add_error("feed_url", _("Feed URL is required for standard sources."))
+
+        if workspace and groups:
+            mismatched = [group for group in groups if group.workspace_id != workspace.id]
+            if mismatched:
+                self.add_error(
+                    "groups",
+                    _("All selected groups must belong to the selected workspace."),
+                )
+
+        return cleaned_data
 
     def _set_initial_values(self, instance):
         if instance.translator_content_type and instance.translator_object_id:
@@ -123,5 +151,6 @@ class FeedForm(forms.ModelForm):
 
         if commit:
             instance.save()
+            self.save_m2m()
 
         return instance

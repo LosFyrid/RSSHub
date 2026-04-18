@@ -14,6 +14,20 @@
             <h2>{% trans "Import OPML" %}</h2>
             <form method="post" action="{% url 'admin:core_feed_import_opml' %}" enctype="multipart/form-data">
                 {% csrf_token %}
+                <p>
+                    <label for="workspace">{% trans "Workspace" %}</label>
+                    <select name="workspace" id="workspace">
+                        {% for workspace in workspace_choices %}
+                            <option value="{{ workspace.id }}" {% if workspace.is_default %}selected{% endif %}>{{ workspace.name }}</option>
+                        {% endfor %}
+                    </select>
+                </p>
+                <p>
+                    <label>
+                        <input type="checkbox" name="create_groups_from_outlines" checked>
+                        {% trans "Create feed groups from OPML outlines" %}
+                    </label>
+                </p>
                 <input type="file" name="opml_file" accept=".opml,.xml">
                 <input type="submit" value="{% trans 'Import' %}">
             </form>

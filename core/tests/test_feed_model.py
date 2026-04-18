@@ -1,11 +1,20 @@
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.test import TestCase
 from django.utils import timezone
 from django.db import IntegrityError
+from django.contrib.contenttypes.models import ContentType
 
-from ..models import Feed, Entry, Filter, Tag
+from ..models import Feed, Entry, Filter, Tag, Workspace, FeedGroup, OpenAIAgent
 
 
 class FeedModelTest(TestCase):
+    def setUp(self):
+        self.workspace = Workspace.get_default()
+        self.agent = OpenAIAgent.objects.create(
+            name="Workspace Agent", api_key="key", valid=True
+        )
+
     def test_feed_creation_and_defaults(self):
         """Test creating Feed instances with minimal and comprehensive data."""
         # Test minimal data and defaults
@@ -14,6 +23,8 @@ class FeedModelTest(TestCase):
 
         self.assertEqual(feed.feed_url, feed_url)
         self.assertEqual(str(feed), feed_url)
+        self.assertEqual(feed.workspace, self.workspace)
+        self.assertEqual(feed.source_kind, Feed.TRANSLATE)
         self.assertEqual(feed.update_frequency, 30)
         self.assertEqual(feed.max_posts, 20)
         self.assertEqual(feed.fetch_article, False)
@@ -22,6 +33,7 @@ class FeedModelTest(TestCase):
         self.assertEqual(feed.translate_content, False)
         self.assertEqual(feed.summary, False)
         self.assertEqual(feed.total_tokens, 0)
+        self.assertFalse(feed.is_archived)
         self.assertIsNotNone(feed.slug)
         self.assertEqual(len(feed.slug), 32)
 
@@ -88,13 +100,24 @@ class FeedModelTest(TestCase):
     def test_feed_unique_constraint(self):
         """Test Feed unique constraint on feed_url and target_language."""
         Feed.objects.create(
-            feed_url="https://example.com/unique-test.xml", target_language="zh-hans"
+            workspace=self.workspace,
+            feed_url="https://example.com/unique-test.xml",
+            target_language="zh-hans",
         )
         with self.assertRaises(IntegrityError):
-            Feed.objects.create(
-                feed_url="https://example.com/unique-test.xml",
-                target_language="zh-hans",
-            )
+            with transaction.atomic():
+                Feed.objects.create(
+                    workspace=self.workspace,
+                    feed_url="https://example.com/unique-test.xml",
+                    target_language="zh-hans",
+                )
+
+        other_workspace = Workspace.objects.create(name="Team B")
+        Feed.objects.create(
+            workspace=other_workspace,
+            feed_url="https://example.com/unique-test.xml",
+            target_language="zh-hans",
+        )
 
     def test_feed_generic_foreign_key_cleanup(self):
         """Test Feed generic foreign key cleanup."""
@@ -131,6 +154,55 @@ class FeedModelTest(TestCase):
         )
         result = feed.filtered_entries
         self.assertIsNotNone(result)
+
+    def test_feed_group_workspace_validation(self):
+        group = FeedGroup.objects.create(workspace=self.workspace, name="Karpathy")
+        other_workspace = Workspace.objects.create(name="Other Workspace")
+        other_group = FeedGroup.objects.create(workspace=other_workspace, name="Other")
+        feed = Feed.objects.create(
+            workspace=self.workspace, feed_url="https://example.com/group-test.xml"
+        )
+        feed.groups.add(group)
+        self.assertIn(group, feed.groups.all())
+
+        feed.groups.add(other_group)
+        with self.assertRaises(ValidationError):
+            feed.full_clean()
+
+    def test_builderpulse_defaults(self):
+        feed = Feed.objects.create(
+            workspace=self.workspace,
+            source_kind=Feed.BUILDERPULSE,
+            source_ref="zh",
+            target_language="Chinese Simplified",
+        )
+        self.assertEqual(feed.feed_url, "https://github.com/BuilderPulse/BuilderPulse")
+        self.assertEqual(feed.source_ref, "zh")
+        self.assertEqual(feed.source_kind, Feed.GITHUB_MD)
+
+    def test_subscription_urls(self):
+        feed = Feed.objects.create(
+            workspace=self.workspace,
+            feed_url="https://example.com/subscription-test.xml",
+            slug="subscription-test",
+        )
+        self.assertTrue(feed.get_translated_feed_url().endswith("/rss/subscription-test"))
+        self.assertTrue(feed.get_proxy_feed_url().endswith("/rss/proxy/subscription-test"))
+
+    def test_effective_provider_resolution_uses_workspace_defaults(self):
+        ct = ContentType.objects.get_for_model(OpenAIAgent)
+        self.workspace.default_translator_content_type = ct
+        self.workspace.default_translator_object_id = self.agent.id
+        self.workspace.default_summarizer = self.agent
+        self.workspace.save()
+
+        feed = Feed.objects.create(
+            workspace=self.workspace,
+            feed_url="https://example.com/provider-default.xml",
+        )
+
+        self.assertEqual(feed.get_effective_translator(), self.agent)
+        self.assertEqual(feed.get_effective_summarizer(), self.agent)
 
     def test_feed_field_choices_and_validation(self):
         """Test Feed field validators and choices."""

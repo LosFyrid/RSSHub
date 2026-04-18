@@ -19,18 +19,20 @@ def handle_feeds_summary(feeds: list):
             logger.info(
                 "Start summary feed %s to %s", feed.feed_url, feed.target_language
             )
-            if not feed.summarizer:
+            summarizer = feed.get_effective_summarizer()
+            if not summarizer:
                 raise Exception("Summarizer Engine Not Set")
 
-            min_chunk_size = feed.summarizer.min_size()
-            max_chunk_size = feed.summarizer.max_size()
-            max_context_tokens = feed.summarizer.max_tokens
+            min_chunk_size = summarizer.min_size()
+            max_chunk_size = summarizer.max_size()
+            max_context_tokens = summarizer.max_tokens
 
             summarize_feed(
                 feed,
                 min_chunk_size=min_chunk_size,
                 max_chunk_size=max_chunk_size,
                 max_context_tokens=max_context_tokens,
+                summarizer=summarizer,
             )
             feed.translation_status = True
             feed.log += f"{timezone.now()} Summary Completed <br>"
@@ -63,7 +65,7 @@ def summarize_feed(
     """
     Generate content summary with memory optimizations.
     """
-    summarizer = summarizer or feed.summarizer
+    summarizer = summarizer or feed.get_effective_summarizer()
     assert 0 <= feed.summary_detail <= 1, "summary_detail must be between 0 and 1"
     entries_to_save = []
     total_tokens = 0

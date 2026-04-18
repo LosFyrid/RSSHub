@@ -4,12 +4,44 @@ from config import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models
+from django.db.models import Q
+from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.core.validators import MinValueValidator, MaxValueValidator
 from tagulous.models import TagField
+from core.models.workspace import get_default_workspace_id
 
 
 class Feed(models.Model):
+    TRANSLATE = "translate"
+    GITHUB_MD = "github_md"
+    STANDARD = TRANSLATE
+    BUILDERPULSE = GITHUB_MD
+    SOURCE_KIND_CHOICES = [
+        (TRANSLATE, _("Translate")),
+        (GITHUB_MD, _("GitHub Markdown")),
+    ]
+
+    workspace = models.ForeignKey(
+        "Workspace",
+        on_delete=models.CASCADE,
+        related_name="feeds",
+        default=get_default_workspace_id,
+        verbose_name=_("Workspace"),
+    )
+    source_kind = models.CharField(
+        max_length=32,
+        choices=SOURCE_KIND_CHOICES,
+        default=TRANSLATE,
+        verbose_name=_("Source Kind"),
+    )
+    source_ref = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name=_("Source Reference"),
+        help_text=_("Adapter-specific source reference, used by synthetic sources."),
+    )
     name = models.CharField(
         max_length=255, blank=True, null=True, verbose_name=_("Name")
     )
@@ -50,7 +82,8 @@ class Feed(models.Model):
         blank=True,
         null=True,
     )
-    feed_url = models.URLField(_("Feed URL"))
+    feed_url = models.URLField(_("Feed URL"), blank=True, null=True)
+    is_archived = models.BooleanField(_("Archived"), default=False)
     fetch_status = models.BooleanField(
         _("Fetch Status"),
         null=True,
@@ -154,6 +187,12 @@ class Feed(models.Model):
     tags = models.ManyToManyField(
         "Tag", blank=True, related_name="feeds", verbose_name=_("Tags")
     )
+    groups = models.ManyToManyField(
+        "FeedGroup",
+        blank=True,
+        related_name="feeds",
+        verbose_name=_("Groups"),
+    )
 
     total_tokens = models.IntegerField(_("Tokens Cost"), default=0)
     total_characters = models.IntegerField(_("Characters Cost"), default=0)
@@ -191,22 +230,59 @@ class Feed(models.Model):
     )
 
     def __str__(self):
-        return self.feed_url
+        return self.feed_url or self.name or self.slug or f"feed-{self.pk}"
 
     class Meta:
         verbose_name = _("Feed")
         verbose_name_plural = _("Feeds")
         constraints = [
             models.UniqueConstraint(
-                fields=["feed_url", "target_language"], name="unique_feed_lang"
+                fields=["workspace", "feed_url", "target_language"],
+                condition=Q(feed_url__isnull=False),
+                name="unique_workspace_feed_lang",
+            ),
+            models.UniqueConstraint(
+                fields=["workspace", "source_kind", "source_ref", "target_language"],
+                condition=Q(source_ref__isnull=False),
+                name="unique_workspace_source_ref_lang",
             )
         ]
 
+    def clean(self):
+        super().clean()
+        errors = {}
+
+        if self.source_kind == self.STANDARD and not self.feed_url:
+            errors["feed_url"] = _("Feed URL is required for standard sources.")
+
+        if self.source_kind == self.BUILDERPULSE:
+            if not self.source_ref:
+                self.source_ref = "zh"
+            if not self.feed_url:
+                self.feed_url = "https://github.com/BuilderPulse/BuilderPulse"
+
+        if self.workspace_id and self.pk:
+            mismatched_groups = self.groups.exclude(workspace_id=self.workspace_id)
+            if mismatched_groups.exists():
+                errors["groups"] = _(
+                    "All assigned groups must belong to the same workspace as the feed."
+                )
+
+        if errors:
+            raise ValidationError(errors)
+
     def save(self, *args, **kwargs):
+        if not self.workspace_id:
+            self.workspace_id = get_default_workspace_id()
+
+        if self.source_kind == self.BUILDERPULSE:
+            self.source_ref = self.source_ref or "zh"
+            self.feed_url = self.feed_url or "https://github.com/BuilderPulse/BuilderPulse"
+
         if not self.slug:
             self.slug = uuid.uuid5(
                 uuid.NAMESPACE_URL,
-                f"{self.feed_url}:{self.target_language}:{settings.SECRET_KEY}",
+                f"{self.workspace_id}:{self.source_kind}:{self.feed_url}:{self.source_ref}:{self.target_language}:{settings.SECRET_KEY}",
             ).hex
 
         thresholds = [5, 15, 30, 60, 1440, 10080]
@@ -228,6 +304,34 @@ class Feed(models.Model):
 
     def get_translation_display(self):
         return dict(self.TRANSLATION_DISPLAY_CHOICES)[self.translation_display]
+
+    def get_source_kind_display_label(self):
+        return dict(self.SOURCE_KIND_CHOICES).get(self.source_kind, self.source_kind)
+
+    def get_effective_translator(self):
+        if self.translator:
+            return self.translator
+        if self.workspace_id and self.workspace:
+            return self.workspace.get_default_translator()
+        return None
+
+    def get_effective_summarizer(self):
+        if self.summarizer:
+            return self.summarizer
+        if self.workspace_id and self.workspace:
+            return self.workspace.get_default_summarizer()
+        return None
+
+    def get_translated_feed_url(self):
+        return f"{settings.SITE_URL.rstrip('/')}/rss/{self.slug}"
+
+    def get_proxy_feed_url(self):
+        return f"{settings.SITE_URL.rstrip('/')}/rss/proxy/{self.slug}"
+
+    def get_subscription_url(self, variant="translated"):
+        if variant == "proxy":
+            return self.get_proxy_feed_url()
+        return self.get_translated_feed_url()
 
     @property
     def filtered_entries(self):

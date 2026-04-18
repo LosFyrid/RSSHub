@@ -1,0 +1,28 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: rss-hub-postgres
+  labels:
+    app.kubernetes.io/name: rss-hub
+    app.kubernetes.io/component: postgres
+spec:
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  instances: 1
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: rsshub
+      owner: rsshub
+      secret:
+        name: rss-hub-db-auth
+  storage:
+    storageClass: longhorn
+    size: 10Gi
+    resizeInUseVolumes: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
