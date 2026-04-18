@@ -20,6 +20,7 @@ from ..views import (
     hub_login,
     hub_register,
     hub_dashboard,
+    hub_create_provider,
     hub_create_workspace,
     hub_create_feed,
     hub_bulk_export,
@@ -697,6 +698,7 @@ class ViewsTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("用户控制台".encode("utf-8"), response.content)
         self.assertIn("Workspace 邀请".encode("utf-8"), response.content)
+        self.assertIn("翻译器与摘要器库存".encode("utf-8"), response.content)
 
     def test_hub_update_workspace(self):
         request = self.factory.post(
@@ -765,6 +767,58 @@ class ViewsTestCase(TestCase):
                 is_active=True,
             ).exists()
         )
+
+    @patch("core.views.OpenAIAgent.validate", return_value=True)
+    def test_hub_create_provider_superuser(self, mock_validate):
+        self.user.is_superuser = True
+        self.user.save(update_fields=["is_superuser"])
+        request = self.factory.post(
+            "/providers/create/",
+            {
+                "provider_type": "openai",
+                "openai-name": "Console Agent",
+                "openai-api_key": "sk-test",
+                "openai-base_url": "https://api.openai.com/v1",
+                "openai-model": "gpt-4.1-mini",
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_create_provider(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(OpenAIAgent.objects.filter(name="Console Agent").exists())
+        mock_validate.assert_called_once()
+
+    def test_hub_create_provider_requires_superuser(self):
+        request = self.factory.post(
+            "/providers/create/",
+            {
+                "provider_type": "openai",
+                "openai-name": "Forbidden Agent",
+                "openai-api_key": "sk-test",
+                "openai-base_url": "https://api.openai.com/v1",
+                "openai-model": "gpt-4.1-mini",
+            },
+        )
+        messages = self._setup_request_with_messages(request)
+        request.user = self.user
+        response = hub_create_provider(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(OpenAIAgent.objects.filter(name="Forbidden Agent").exists())
+        self.assertIn("这里只允许平台管理员创建 provider 凭据。", [str(m) for m in messages])
+
+    def test_hub_dashboard_shows_missing_translator_diagnostic(self):
+        self.feed.translate_title = True
+        self.feed.translate_content = True
+        self.feed.translation_status = False
+        self.feed.log = "Translate Engine Not Set"
+        self.feed.save(
+            update_fields=["translate_title", "translate_content", "translation_status", "log"]
+        )
+        request = self.factory.get(f"/?feed={self.feed.id}")
+        self._setup_hub_request(request)
+        response = hub_dashboard(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("翻译引擎尚未配置".encode("utf-8"), response.content)
 
     def test_hub_dashboard_workspace_switcher_only_shows_accessible_workspaces(self):
         other_workspace = Workspace.objects.create(name="Other Workspace")

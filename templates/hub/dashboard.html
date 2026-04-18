@@ -250,6 +250,17 @@
                 </div>
             </div>
 
+            {% if runtime_diagnostics %}
+            <div class="runtime-diagnostics">
+                {% for item in runtime_diagnostics %}
+                <div class="hint-box {% if item.severity == 'warning' %}warning-box{% endif %}">
+                    <strong>{{ item.title }}</strong>
+                    <p>{{ item.body }}</p>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
             <form class="stack-form" method="post" action="{% url 'hub:update_feed' selected_feed.id %}">
                 {% csrf_token %}
                 <label>{% if ui_language == "en-us" %}Display name{% else %}显示名称{% endif %}{{ feed_edit_form.name }}</label>

@@ -4,8 +4,11 @@ import uuid
 
 from core.forms.feed_form import FeedForm
 from core.forms.hub_forms import (
+    HubDeepLAgentForm,
     HubFeedCreateForm,
     HubFeedEditForm,
+    HubLibreTranslateAgentForm,
+    HubOpenAIAgentForm,
     HubWorkspaceProviderForm,
 )
 from core.models import Feed, Workspace, FeedGroup
@@ -130,3 +133,33 @@ class FeedFormTest(TestCase):
         form = HubFeedEditForm(instance=feed)
         group_names = list(form.fields["groups"].queryset.values_list("name", flat=True))
         self.assertEqual(group_names, ["Karpathy"])
+
+    def test_console_provider_forms_minimal_payloads(self):
+        openai_form = HubOpenAIAgentForm(
+            data={
+                "name": "Console OpenAI",
+                "api_key": "sk-test",
+                "base_url": "https://api.openai.com/v1",
+                "model": "gpt-4.1-mini",
+            }
+        )
+        self.assertTrue(openai_form.is_valid(), openai_form.errors)
+
+        deepl_form = HubDeepLAgentForm(
+            data={
+                "name": "Console DeepL",
+                "api_key": "deepl-key",
+                "server_url": "",
+                "proxy": "",
+            }
+        )
+        self.assertTrue(deepl_form.is_valid(), deepl_form.errors)
+
+        libre_form = HubLibreTranslateAgentForm(
+            data={
+                "name": "Console Libre",
+                "api_key": "",
+                "server_url": "https://libretranslate.example.com",
+            }
+        )
+        self.assertTrue(libre_form.is_valid(), libre_form.errors)

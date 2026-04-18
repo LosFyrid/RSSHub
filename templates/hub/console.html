@@ -119,6 +119,98 @@
         <section class="panel">
             <div class="panel-head">
                 <div>
+                    <p class="panel-kicker">{% if ui_language == "en-us" %}Providers{% else %}Providers{% endif %}</p>
+                    <h2>{% if ui_language == "en-us" %}Translator and summarizer inventory{% else %}翻译器与摘要器库存{% endif %}</h2>
+                </div>
+            </div>
+            <div class="provider-inventory">
+                {% for bucket in provider_rows %}
+                <section class="provider-bucket">
+                    <div class="provider-bucket-head">
+                        <strong>{{ bucket.kind }}</strong>
+                        <span class="mini-pill">{{ bucket.items|length }}</span>
+                    </div>
+                    <div class="member-list">
+                        {% for provider in bucket.items %}
+                        <div class="member-row">
+                            <div class="member-summary">
+                                <div>
+                                    <strong>{{ provider.name }}</strong>
+                                    <div class="subline">{% if provider.valid %}{% if ui_language == "en-us" %}Validated{% else %}已通过校验{% endif %}{% elif provider.valid == False %}{% if ui_language == "en-us" %}Validation failed{% else %}校验失败{% endif %}{% else %}{% if ui_language == "en-us" %}Pending validation{% else %}等待校验{% endif %}{% endif %}</div>
+                                    {% if provider.model %}<div class="subline">{{ provider.model }}</div>{% endif %}
+                                    {% if provider.base_url %}<div class="subline">{{ provider.base_url }}</div>{% elif provider.server_url %}<div class="subline">{{ provider.server_url }}</div>{% endif %}
+                                </div>
+                                <span class="mini-pill {% if provider.valid %}mini-pill-success{% elif provider.valid == False %}mini-pill-warning{% endif %}">{% if provider.valid %}{% if ui_language == "en-us" %}Ready{% else %}可用{% endif %}{% elif provider.valid == False %}{% if ui_language == "en-us" %}Failed{% else %}失败{% endif %}{% else %}{% if ui_language == "en-us" %}Pending{% else %}待定{% endif %}{% endif %}</span>
+                            </div>
+                            <div class="provider-log-preview">{{ provider.log|default:"-" }}</div>
+                        </div>
+                        {% empty %}
+                        <div class="empty-detail">{% if ui_language == "en-us" %}No {{ bucket.kind }} providers exist yet.{% else %}当前还没有 {{ bucket.kind }} provider。{% endif %}</div>
+                        {% endfor %}
+                    </div>
+                </section>
+                {% endfor %}
+            </div>
+            {% if can_manage_provider_catalog %}
+            <div class="provider-create-grid">
+                <section class="provider-create-card">
+                    <div class="provider-bucket-head">
+                        <strong>OpenAI</strong>
+                        <span class="subline">{% if ui_language == "en-us" %}For translation and summarization{% else %}可用于翻译和摘要{% endif %}</span>
+                    </div>
+                    <form class="stack-form" method="post" action="{% url 'hub:create_provider' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="provider_type" value="openai">
+                        <label>{% if ui_language == "en-us" %}Name{% else %}名称{% endif %}{{ provider_creation_forms.openai.name }}</label>
+                        <label>API Key{{ provider_creation_forms.openai.api_key }}</label>
+                        <label>Base URL{{ provider_creation_forms.openai.base_url }}</label>
+                        <label>Model{{ provider_creation_forms.openai.model }}</label>
+                        <button type="submit">{% if ui_language == "en-us" %}Save and validate{% else %}保存并校验{% endif %}</button>
+                    </form>
+                </section>
+                <section class="provider-create-card">
+                    <div class="provider-bucket-head">
+                        <strong>DeepL</strong>
+                        <span class="subline">{% if ui_language == "en-us" %}Dedicated translation provider{% else %}专用翻译 provider{% endif %}</span>
+                    </div>
+                    <form class="stack-form" method="post" action="{% url 'hub:create_provider' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="provider_type" value="deepl">
+                        <label>{% if ui_language == "en-us" %}Name{% else %}名称{% endif %}{{ provider_creation_forms.deepl.name }}</label>
+                        <label>API Key{{ provider_creation_forms.deepl.api_key }}</label>
+                        <label>Server URL{{ provider_creation_forms.deepl.server_url }}</label>
+                        <label>Proxy{{ provider_creation_forms.deepl.proxy }}</label>
+                        <button type="submit">{% if ui_language == "en-us" %}Save and validate{% else %}保存并校验{% endif %}</button>
+                    </form>
+                </section>
+                <section class="provider-create-card">
+                    <div class="provider-bucket-head">
+                        <strong>LibreTranslate</strong>
+                        <span class="subline">{% if ui_language == "en-us" %}Self-hosted or public fallback{% else %}自托管或公共备用服务{% endif %}</span>
+                    </div>
+                    <form class="stack-form" method="post" action="{% url 'hub:create_provider' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="provider_type" value="libretranslate">
+                        <label>{% if ui_language == "en-us" %}Name{% else %}名称{% endif %}{{ provider_creation_forms.libretranslate.name }}</label>
+                        <label>API Key{{ provider_creation_forms.libretranslate.api_key }}</label>
+                        <label>Server URL{{ provider_creation_forms.libretranslate.server_url }}</label>
+                        <button type="submit">{% if ui_language == "en-us" %}Save and validate{% else %}保存并校验{% endif %}</button>
+                    </form>
+                </section>
+            </div>
+            <div class="hint-box">
+                <p>{% if ui_language == "en-us" %}Providers are global runtime credentials today, so only a platform administrator can create them here. Workspace owners and managers can still select defaults once a provider is available.{% else %}当前 provider 在数据模型里仍是全局运行时凭据，因此这里只允许平台管理员创建。Workspace Owner 和 Manager 可以在 provider 可用后继续选择默认值。{% endif %}</p>
+            </div>
+            {% else %}
+            <div class="hint-box">
+                <p>{% if ui_language == "en-us" %}This workspace can choose existing providers, but only a platform administrator can create or rotate provider credentials in Console today.{% else %}当前 workspace 可以选择已有 provider，但创建或轮换 provider 凭据仍只允许平台管理员在 Console 中处理。{% endif %}</p>
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div>
                     <p class="panel-kicker">{% if ui_language == "en-us" %}Members{% else %}成员{% endif %}</p>
                     <h2>{% if selected_workspace %}{{ selected_workspace.name }}{% else %}Workspace{% endif %}</h2>
                 </div>

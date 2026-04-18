@@ -10,9 +10,11 @@ from django.core.cache import cache
 from django.views.decorators.http import condition
 from django.views.decorators.http import require_http_methods
 from .models import (
+    DeepLAgent,
     Feed,
     Tag,
     Digest,
+    LibreTranslateAgent,
     Workspace,
     FeedGroup,
     OpenAIAgent,
@@ -36,10 +38,13 @@ from .tasks.async_jobs import submit_async_task
 from .forms import (
     HubBulkEditForm,
     HubBulkExportForm,
+    HubDeepLAgentForm,
     HubFeedCreateForm,
     HubFeedEditForm,
     HubInvitationDecisionForm,
+    HubLibreTranslateAgentForm,
     HubLoginForm,
+    HubOpenAIAgentForm,
     HubPasswordChangeForm,
     HubRegistrationForm,
     HubUiPreferenceForm,
@@ -352,6 +357,135 @@ def _hub_navigation_context(request, ui_language, workspaces, selected_workspace
     }
 
 
+def _provider_catalog():
+    return [
+        {
+            "key": "openai",
+            "label": "OpenAI",
+            "model": OpenAIAgent,
+        },
+        {
+            "key": "deepl",
+            "label": "DeepL",
+            "model": DeepLAgent,
+        },
+        {
+            "key": "libretranslate",
+            "label": "LibreTranslate",
+            "model": LibreTranslateAgent,
+        },
+    ]
+
+
+def _provider_creation_forms(ui_language):
+    return {
+        "openai": HubOpenAIAgentForm(prefix="openai", ui_language=ui_language),
+        "deepl": HubDeepLAgentForm(prefix="deepl", ui_language=ui_language),
+        "libretranslate": HubLibreTranslateAgentForm(
+            prefix="libretranslate",
+            ui_language=ui_language,
+        ),
+    }
+
+
+def _provider_rows():
+    return [
+        {
+            "kind": "OpenAI",
+            "items": list(OpenAIAgent.objects.order_by("name")),
+        },
+        {
+            "kind": "DeepL",
+            "items": list(DeepLAgent.objects.order_by("name")),
+        },
+        {
+            "kind": "LibreTranslate",
+            "items": list(LibreTranslateAgent.objects.order_by("name")),
+        },
+    ]
+
+
+def _feed_runtime_diagnostics(feed, ui_language):
+    if not feed:
+        return []
+
+    diagnostics = []
+    translator = feed.get_effective_translator()
+    summarizer = feed.get_effective_summarizer()
+    translation_enabled = bool(feed.translate_title or feed.translate_content)
+    summary_enabled = bool(feed.summary)
+
+    if translation_enabled and not translator:
+        diagnostics.append(
+            {
+                "severity": "warning",
+                "title": (
+                    "Translation engine is not configured"
+                    if ui_language == "en-us"
+                    else "翻译引擎尚未配置"
+                ),
+                "body": (
+                    "This feed has translation enabled, but neither the feed itself nor its workspace has an active translator. New entries will keep failing with 'Translate Engine Not Set' until you configure one in Console."
+                    if ui_language == "en-us"
+                    else "这个信源开启了翻译，但信源本身和所在 workspace 都没有生效的翻译器。继续抓新文章时会反复出现“Translate Engine Not Set”。请先去 Console 配置翻译器。"
+                ),
+            }
+        )
+
+    if summary_enabled and not summarizer:
+        diagnostics.append(
+            {
+                "severity": "warning",
+                "title": (
+                    "Summarizer is not configured"
+                    if ui_language == "en-us"
+                    else "摘要器尚未配置"
+                ),
+                "body": (
+                    "This feed has summary generation enabled, but there is no active summarizer on the feed or workspace defaults."
+                    if ui_language == "en-us"
+                    else "这个信源开启了摘要生成，但信源本身和 workspace 默认设置里都没有生效的摘要器。"
+                ),
+            }
+        )
+
+    if feed.translation_status is False:
+        diagnostics.append(
+            {
+                "severity": "warning",
+                "title": (
+                    "Latest translation run failed"
+                    if ui_language == "en-us"
+                    else "最近一次翻译执行失败"
+                ),
+                "body": (
+                    "The runtime log below contains the most recent entry-level failures. This usually means the source fetched successfully, but translation or article processing failed."
+                    if ui_language == "en-us"
+                    else "下面的运行日志保留了最近一次逐条文章处理失败的信息。这通常意味着抓取成功了，但翻译或正文处理失败。"
+                ),
+            }
+        )
+
+    if feed.fetch_status is False:
+        diagnostics.append(
+            {
+                "severity": "warning",
+                "title": (
+                    "Latest fetch run failed"
+                    if ui_language == "en-us"
+                    else "最近一次抓取执行失败"
+                ),
+                "body": (
+                    "Check the feed URL, source stability, and the runtime log below."
+                    if ui_language == "en-us"
+                    else "请检查 feed URL、信源可用性和下方运行日志。"
+                ),
+            }
+        )
+
+    return diagnostics
+
+
 @_login_required_hub
 def hub_dashboard(request):
     ui_language = _hub_language(request)
@@ -444,6 +578,7 @@ def hub_dashboard(request):
         "selected_workspace_role": selected_workspace_role,
         "can_manage_selected_workspace": can_manage_selected_workspace,
         "has_workspace_access": True,
+        "runtime_diagnostics": _feed_runtime_diagnostics(selected_feed, ui_language),
     }
     return render(request, "hub/dashboard.html", context)
 
@@ -572,6 +707,7 @@ def hub_console(request):
     )
     if selected_workspace:
         workspace_provider_form.set_workspace_initial(selected_workspace)
+    provider_creation_forms = _provider_creation_forms(ui_language)
     context = {
         **_hub_navigation_context(
             request,
@@ -620,8 +756,72 @@ def hub_console(request):
         ),
         "can_manage_selected_workspace": can_manage_selected_workspace,
         "can_manage_workspace_members": can_manage_workspace_members,
+        "provider_rows": _provider_rows(),
+        "provider_creation_forms": provider_creation_forms,
+        "can_manage_provider_catalog": request.user.is_superuser,
     }
     return render(request, "hub/console.html", context)
+
+
+@_login_required_hub
+@require_http_methods(["POST"])
+def hub_create_provider(request):
+    ui_language = _hub_language(request)
+    activate(ui_language)
+    if not request.user.is_superuser:
+        messages.error(
+            request,
+            _("Only a platform administrator can create provider credentials here.")
+            if ui_language == "en-us"
+            else _("这里只允许平台管理员创建 provider 凭据。"),
+        )
+        return redirect("hub:console")
+
+    provider_type = (request.POST.get("provider_type") or "").strip().lower()
+    form_map = {
+        "openai": HubOpenAIAgentForm,
+        "deepl": HubDeepLAgentForm,
+        "libretranslate": HubLibreTranslateAgentForm,
+    }
+    form_class = form_map.get(provider_type)
+    if form_class is None:
+        messages.error(
+            request,
+            _("Unknown provider type.")
+            if ui_language == "en-us"
+            else _("未知的 provider 类型。"),
+        )
+        return redirect("hub:console")
+
+    form = form_class(request.POST, prefix=provider_type, ui_language=ui_language)
+    if not form.is_valid():
+        for field, errors in form.errors.items():
+            for error in errors:
+                messages.error(request, f"{field}: {error}")
+        return redirect("hub:console")
+
+    provider = form.save(commit=False)
+    provider.valid = None
+    provider.save()
+    is_valid = provider.validate()
+    if is_valid:
+        messages.success(
+            request,
+            _("{provider} provider is ready.").format(provider=provider.name)
+            if ui_language == "en-us"
+            else _("{provider} provider 已可用。").format(provider=provider.name),
+        )
+    else:
+        messages.warning(
+            request,
+            _("{provider} was saved, but validation failed. Check the provider log in Console.")
+            .format(provider=provider.name)
+            if ui_language == "en-us"
+            else _("{provider} 已保存，但校验失败。请在 Console 查看 provider 日志。").format(
+                provider=provider.name
+            ),
+        )
+    return redirect("hub:console")
 
 
 @_login_required_hub

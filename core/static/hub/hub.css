@@ -760,6 +760,55 @@ body:not(.bulk-mode) .bulk-col {
     gap: 12px;
 }
 
+.provider-inventory,
+.runtime-diagnostics {
+    display: grid;
+    gap: 12px;
+}
+
+.provider-bucket,
+.provider-create-card {
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid var(--line);
+    background: var(--field-bg);
+}
+
+.provider-bucket-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.provider-create-grid {
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.provider-log-preview {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px dashed var(--line);
+    color: var(--muted);
+    line-height: 1.45;
+    background: var(--hero-card);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.mini-pill-success {
+    color: var(--success);
+}
+
+.mini-pill-warning {
+    color: var(--danger);
+}
+
 .warning-box {
     border-style: solid;
     border-color: rgba(154, 77, 18, 0.28);
@@ -824,7 +873,8 @@ body:not(.bulk-mode) .bulk-col {
     .tri-checks,
     .split-fields,
     .hero-links,
-    .runtime-grid {
+    .runtime-grid,
+    .provider-create-grid {
         grid-template-columns: 1fr;
     }
 }

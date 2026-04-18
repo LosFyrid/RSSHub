@@ -4,10 +4,13 @@ from core.forms.feed_group_form import FeedGroupForm
 from core.forms.hub_forms import (
     HubBulkEditForm,
     HubBulkExportForm,
+    HubDeepLAgentForm,
     HubFeedCreateForm,
     HubFeedEditForm,
     HubInvitationDecisionForm,
+    HubLibreTranslateAgentForm,
     HubLoginForm,
+    HubOpenAIAgentForm,
     HubPasswordChangeForm,
     HubRegistrationForm,
     HubUiPreferenceForm,

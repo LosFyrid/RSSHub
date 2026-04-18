@@ -7,6 +7,8 @@ from django.utils.translation import gettext_lazy as _
 from core.models import (
     Feed,
     FeedGroup,
+    DeepLAgent,
+    LibreTranslateAgent,
     OpenAIAgent,
     Tag,
     Workspace,
@@ -309,6 +311,89 @@ class HubWorkspaceProviderForm(forms.Form):
             workspace.default_translator_object_id = None
         workspace.save()
         return workspace
+
+
+class HubOpenAIAgentForm(forms.ModelForm):
+    class Meta:
+        model = OpenAIAgent
+        fields = ["name", "api_key", "base_url", "model"]
+        widgets = {
+            "api_key": forms.PasswordInput(render_value=False),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.ui_language = kwargs.pop("ui_language", "zh-hans")
+        super().__init__(*args, **kwargs)
+        self.fields["name"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "例如：OpenAI 主翻译器",
+            "For example: Primary OpenAI translator",
+        )
+        self.fields["api_key"].widget.attrs["placeholder"] = "sk-..."
+        self.fields["base_url"].widget.attrs["placeholder"] = "https://api.openai.com/v1"
+        self.fields["model"].widget.attrs["placeholder"] = "gpt-4.1-mini"
+
+
+class HubDeepLAgentForm(forms.ModelForm):
+    class Meta:
+        model = DeepLAgent
+        fields = ["name", "api_key", "server_url", "proxy"]
+        widgets = {
+            "api_key": forms.PasswordInput(render_value=False),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.ui_language = kwargs.pop("ui_language", "zh-hans")
+        super().__init__(*args, **kwargs)
+        self.fields["name"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "例如：DeepL 翻译器",
+            "For example: DeepL translator",
+        )
+        self.fields["api_key"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "DeepL API Key",
+            "DeepL API key",
+        )
+        self.fields["server_url"].required = False
+        self.fields["proxy"].required = False
+        self.fields["server_url"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "可选：自托管 DeepL 兼容地址",
+            "Optional: self-hosted DeepL-compatible endpoint",
+        )
+        self.fields["proxy"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "可选：代理 URL",
+            "Optional: proxy URL",
+        )
+
+
+class HubLibreTranslateAgentForm(forms.ModelForm):
+    class Meta:
+        model = LibreTranslateAgent
+        fields = ["name", "api_key", "server_url"]
+        widgets = {
+            "api_key": forms.PasswordInput(render_value=False),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.ui_language = kwargs.pop("ui_language", "zh-hans")
+        super().__init__(*args, **kwargs)
+        self.fields["name"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "例如：LibreTranslate 备用翻译器",
+            "For example: LibreTranslate fallback translator",
+        )
+        self.fields["api_key"].required = False
+        self.fields["api_key"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "如果服务要求鉴权，则填写",
+            "Fill only if the service requires auth",
+        )
+        self.fields["server_url"].widget.attrs["placeholder"] = (
+            "https://libretranslate.example.com"
+        )
 
 
 class HubWorkspaceCreateForm(forms.ModelForm):

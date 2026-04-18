@@ -12,6 +12,7 @@ urlpatterns = [
     path("console/", views.hub_console, name="console"),
     path("workspaces/create/", views.hub_create_workspace, name="create_workspace"),
     path("workspaces/update/", views.hub_update_workspace, name="update_workspace"),
+    path("providers/create/", views.hub_create_provider, name="create_provider"),
     path("preferences/", views.hub_set_preferences, name="set_preferences"),
     path("account/password/", views.hub_change_password, name="change_password"),
     path("feeds/create/", views.hub_create_feed, name="create_feed"),
