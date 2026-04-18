@@ -1,6 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.contrib.auth.models import User
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from core.models import (
@@ -9,6 +10,7 @@ from core.models import (
     OpenAIAgent,
     Tag,
     Workspace,
+    WorkspaceInvitation,
     WorkspaceMembership,
 )
 from utils.modelAdmin_utils import get_all_agent_choices
@@ -250,17 +252,23 @@ class HubWorkspaceProviderForm(forms.Form):
     def __init__(self, *args, **kwargs):
         self.ui_language = kwargs.pop("ui_language", "zh-hans")
         workspace_queryset = kwargs.pop("workspace_queryset", None)
+        self.available_translator_choices = []
+        self.available_summarizer_count = 0
         super().__init__(*args, **kwargs)
         if workspace_queryset is not None:
             self.fields["workspace"].queryset = workspace_queryset.order_by("name")
         self.fields["default_target_language"].choices = list(
             Feed._meta.get_field("target_language").choices
         )
+        summarizers = OpenAIAgent.objects.filter(valid=True).order_by("name")
+        self.available_summarizer_count = summarizers.count()
+        self.fields["default_summarizer"].queryset = summarizers
         self.fields["default_summarizer"].empty_label = _ui_text(
             self.ui_language,
             "不设置默认摘要器",
             "No default summarizer",
         )
+        self.available_translator_choices = get_all_agent_choices()
         self.fields["default_translator_option"].choices = [
             (
                 "",
@@ -270,7 +278,7 @@ class HubWorkspaceProviderForm(forms.Form):
                     "Use no default translator",
                 ),
             )
-        ] + get_all_agent_choices()
+        ] + self.available_translator_choices
 
     def set_workspace_initial(self, workspace):
         self.initial["workspace"] = workspace.id
@@ -339,6 +347,97 @@ class HubWorkspaceCreateForm(forms.ModelForm):
         if commit:
             instance.save()
         return instance
+
+
+class HubWorkspaceEditForm(forms.ModelForm):
+    class Meta:
+        model = Workspace
+        fields = [
+            "name",
+            "description",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        self.ui_language = kwargs.pop("ui_language", "zh-hans")
+        super().__init__(*args, **kwargs)
+        self.fields["name"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "例如：AI 研究、Karpathy、BuilderPulse",
+            "For example: AI Research, Karpathy, BuilderPulse",
+        )
+        self.fields["description"].required = False
+        self.fields["description"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "这个 workspace 的协作边界或主题范围",
+            "What collaboration boundary or topic this workspace covers",
+        )
+
+    def clean_name(self):
+        name = (self.cleaned_data.get("name") or "").strip()
+        if not name:
+            raise forms.ValidationError(_("Workspace name is required."))
+        queryset = Workspace.objects.exclude(pk=self.instance.pk if self.instance else None)
+        if queryset.filter(Q(name__iexact=name) | Q(slug__iexact=name.replace(" ", "-"))).exists():
+            raise forms.ValidationError(_("A workspace with a similar name already exists."))
+        return name
+
+
+class HubRegistrationForm(forms.ModelForm):
+    password1 = forms.CharField(widget=forms.PasswordInput, label=_("Password"))
+    password2 = forms.CharField(widget=forms.PasswordInput, label=_("Repeat Password"))
+
+    class Meta:
+        model = User
+        fields = ["username", "email", "first_name", "last_name"]
+
+    def __init__(self, *args, **kwargs):
+        self.ui_language = kwargs.pop("ui_language", "zh-hans")
+        super().__init__(*args, **kwargs)
+        self.fields["email"].required = True
+        self.fields["username"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "登录用户名",
+            "Login username",
+        )
+        self.fields["email"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "用于接收 workspace 邀请的邮箱",
+            "Email used to receive workspace invitations",
+        )
+        self.fields["first_name"].required = False
+        self.fields["last_name"].required = False
+
+    def clean_email(self):
+        email = (self.cleaned_data.get("email") or "").strip().lower()
+        if not email:
+            raise forms.ValidationError(_("Email is required."))
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError(_("A user with this email already exists."))
+        return email
+
+    def clean_username(self):
+        username = (self.cleaned_data.get("username") or "").strip()
+        if not username:
+            raise forms.ValidationError(_("Username is required."))
+        if User.objects.filter(username__iexact=username).exists():
+            raise forms.ValidationError(_("A user with this username already exists."))
+        return username
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get("password1")
+        password2 = cleaned_data.get("password2")
+        if password1 and password2 and password1 != password2:
+            self.add_error("password2", _("The two password fields did not match."))
+        return cleaned_data
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        user.email = (user.email or "").strip().lower()
+        user.set_password(self.cleaned_data["password1"])
+        if commit:
+            user.save()
+        return user
 
 
 class HubBulkExportForm(forms.Form):
@@ -659,9 +758,60 @@ class HubUserCreateForm(forms.ModelForm):
     def save(self, commit=True):
         user = super().save(commit=False)
         user.set_password(self.cleaned_data["password1"])
+        user.email = (user.email or "").strip().lower()
         if commit:
             user.save()
         return user
+
+
+class HubWorkspaceInviteForm(forms.ModelForm):
+    role = forms.ChoiceField(choices=WorkspaceMembership.ROLE_CHOICES)
+
+    class Meta:
+        model = WorkspaceInvitation
+        fields = ["email", "role", "note"]
+
+    def __init__(self, *args, **kwargs):
+        self.ui_language = kwargs.pop("ui_language", "zh-hans")
+        role_choices = kwargs.pop("role_choices", None)
+        super().__init__(*args, **kwargs)
+        if role_choices is not None:
+            self.fields["role"].choices = role_choices
+        self.fields["email"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "输入对方注册时使用的邮箱",
+            "Enter the email they use for sign-up",
+        )
+        self.fields["note"].required = False
+        self.fields["note"].widget.attrs["placeholder"] = _ui_text(
+            self.ui_language,
+            "可选说明：为什么邀请他加入这个 workspace",
+            "Optional note: why they are being invited to this workspace",
+        )
+
+    def clean_email(self):
+        email = (self.cleaned_data.get("email") or "").strip().lower()
+        if not email:
+            raise forms.ValidationError(_("Email is required."))
+        return email
+
+    def save(self, workspace, invited_by, commit=True):
+        invitation = super().save(commit=False)
+        invitation.workspace = workspace
+        invitation.invited_by = invited_by
+        if commit:
+            invitation.save()
+        return invitation
+
+
+class HubInvitationDecisionForm(forms.Form):
+    invitation_id = forms.IntegerField(widget=forms.HiddenInput())
+    decision = forms.ChoiceField(
+        choices=[
+            ("accept", _("Accept")),
+            ("decline", _("Decline")),
+        ]
+    )
 
 
 class HubWorkspaceMemberRoleForm(forms.Form):

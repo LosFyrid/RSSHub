@@ -1,0 +1,245 @@
+{% extends "hub/_shell.html" %}
+
+{% block title %}{% if ui_language == "en-us" %}Console | RSS Hub{% else %}控制台 | RSS Hub{% endif %}{% endblock %}
+
+{% block hero_title %}{% if ui_language == "en-us" %}Manage account, workspace, invitations, and provider policy in one clean console.{% else %}把账户、workspace、邀请和 provider 策略收进一个干净的用户控制台。{% endif %}{% endblock %}
+
+{% block hero_copy %}{% if ui_language == "en-us" %}This page handles user and collaboration operations. Feed creation, import, export, and day-to-day feed editing stay in Dashboard so the management surface stays focused.{% else %}这个页面专门处理用户和协作动作。信源创建、导入导出和日常编辑都留在 Dashboard，避免主页面继续承载过多设置型内容。{% endif %}{% endblock %}
+
+{% block content %}
+<section class="console-grid">
+    <div class="console-main">
+        <section class="panel">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">{% if ui_language == "en-us" %}Inbox{% else %}Inbox{% endif %}</p>
+                    <h2>{% if ui_language == "en-us" %}Workspace invitations{% else %}Workspace 邀请{% endif %}</h2>
+                </div>
+            </div>
+            <div class="member-list">
+                {% for invitation in inbox_invitations %}
+                <div class="member-row invitation-row">
+                    <div class="member-summary">
+                        <div>
+                            <strong>{{ invitation.workspace.name }}</strong>
+                            <div class="subline">{{ invitation.email }} · {{ invitation.get_role_display }} · {{ invitation.invited_by.username }}</div>
+                            {% if invitation.note %}<div class="subline">{{ invitation.note }}</div>{% endif %}
+                        </div>
+                        <span class="mini-pill">{% if ui_language == "en-us" %}Pending{% else %}待处理{% endif %}</span>
+                    </div>
+                    <div class="member-actions">
+                        <form method="post" action="{% url 'hub:respond_invitation' invitation.id %}" class="inline-choice-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="decision" value="accept">
+                            <button type="submit">{% if ui_language == "en-us" %}Accept{% else %}接受{% endif %}</button>
+                        </form>
+                        <form method="post" action="{% url 'hub:respond_invitation' invitation.id %}" class="inline-choice-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="decision" value="decline">
+                            <button type="submit" class="ghost-button danger-button">{% if ui_language == "en-us" %}Decline{% else %}拒绝{% endif %}</button>
+                        </form>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="empty-detail">{% if ui_language == "en-us" %}Your inbox is clear. New workspace invitations sent to your email will appear here after you sign in.{% else %}当前 inbox 为空。别人按你的邮箱发来的 workspace 邀请，会在你登录后出现在这里。{% endif %}</div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="double-panel-grid">
+            <section class="panel">
+                <div class="panel-head">
+                    <div>
+                        <p class="panel-kicker">{% if ui_language == "en-us" %}Workspace{% else %}Workspace{% endif %}</p>
+                        <h2>{% if ui_language == "en-us" %}Create workspace{% else %}创建 workspace{% endif %}</h2>
+                    </div>
+                </div>
+                <form class="stack-form" method="post" action="{% url 'hub:create_workspace' %}">
+                    {% csrf_token %}
+                    <label>{% if ui_language == "en-us" %}Name{% else %}名称{% endif %}{{ workspace_create_form.name }}</label>
+                    <label>{% if ui_language == "en-us" %}Description{% else %}说明{% endif %}{{ workspace_create_form.description }}</label>
+                    <label>{% if ui_language == "en-us" %}Default feed output language{% else %}默认 feed 输出语言{% endif %}{{ workspace_create_form.default_target_language }}</label>
+                    <button type="submit">{% if ui_language == "en-us" %}Create workspace{% else %}创建 workspace{% endif %}</button>
+                </form>
+                <div class="hint-box">
+                    <p>{% if ui_language == "en-us" %}Create a workspace when you need a separate organization-like boundary, team area, or topic library. The creator becomes the first owner automatically.{% else %}当你需要一个类 organization 的独立边界、团队空间或主题库时，就创建新的 workspace。创建者会自动成为第一个 Owner。{% endif %}</p>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-head">
+                    <div>
+                        <p class="panel-kicker">{% if ui_language == "en-us" %}Current Workspace{% else %}当前 Workspace{% endif %}</p>
+                        <h2>{% if selected_workspace %}{{ selected_workspace.name }}{% else %}{% if ui_language == "en-us" %}No workspace selected{% else %}当前未选择 workspace{% endif %}{% endif %}</h2>
+                    </div>
+                </div>
+                {% if selected_workspace and workspace_edit_form %}
+                <form class="stack-form" method="post" action="{% url 'hub:update_workspace' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="workspace_slug" value="{{ selected_workspace.slug }}">
+                    <label>{% if ui_language == "en-us" %}Name{% else %}名称{% endif %}{{ workspace_edit_form.name }}</label>
+                    <label>{% if ui_language == "en-us" %}Description{% else %}说明{% endif %}{{ workspace_edit_form.description }}</label>
+                    <button type="submit" {% if not can_manage_selected_workspace %}disabled{% endif %}>{% if ui_language == "en-us" %}Save workspace profile{% else %}保存 workspace 信息{% endif %}</button>
+                </form>
+                {% else %}
+                <div class="empty-detail">{% if ui_language == "en-us" %}Select a workspace first to edit its basic profile.{% else %}先选择一个 workspace，再编辑它的基本信息。{% endif %}</div>
+                {% endif %}
+            </section>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">{% if ui_language == "en-us" %}Provider Policy{% else %}Provider 策略{% endif %}</p>
+                    <h2>{% if selected_workspace %}{{ selected_workspace.name }}{% else %}Workspace{% endif %}</h2>
+                </div>
+            </div>
+            {% if workspace_provider_form %}
+            <form class="stack-form" method="post" action="{% url 'hub:update_workspace_providers' %}">
+                {% csrf_token %}
+                <label>{% if ui_language == "en-us" %}Workspace{% else %}Workspace{% endif %}{{ workspace_provider_form.workspace }}</label>
+                <label>{% if ui_language == "en-us" %}Default feed output language{% else %}默认 feed 输出语言{% endif %}{{ workspace_provider_form.default_target_language }}</label>
+                <label>{% if ui_language == "en-us" %}Default translator{% else %}默认翻译器{% endif %}{{ workspace_provider_form.default_translator_option }}</label>
+                <label>{% if ui_language == "en-us" %}Default summarizer{% else %}默认摘要器{% endif %}{{ workspace_provider_form.default_summarizer }}</label>
+                <button type="submit" {% if not can_manage_selected_workspace %}disabled{% endif %}>{% if ui_language == "en-us" %}Save workspace defaults{% else %}保存 workspace 默认设置{% endif %}</button>
+            </form>
+            <div class="provider-notes">
+                <div class="hint-box">
+                    <p>{% if ui_language == "en-us" %}Feed output language is separate from UI language. This setting only changes the generated feed language for new defaults in this workspace.{% else %}Feed 输出语言和 UI 语言是两套概念。这里修改的只是该 workspace 下信源的默认输出语言，不会改变控制台界面语言。{% endif %}</p>
+                </div>
+                {% if not provider_has_any_translator or not provider_has_any_summarizer %}
+                <div class="hint-box warning-box">
+                    <p>{% if ui_language == "en-us" %}Only “no default” is selectable right now because the database currently has no valid translator or summarizer agent records. Add and validate agents first, then they will appear here automatically.{% else %}你现在只能选“不设置”，不是 UI 出错，而是数据库里目前没有可用且 `valid=true` 的翻译器或摘要器 agent。先把 agent 配置并验证成功，它们就会自动出现在这里。{% endif %}</p>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">{% if ui_language == "en-us" %}Members{% else %}成员{% endif %}</p>
+                    <h2>{% if selected_workspace %}{{ selected_workspace.name }}{% else %}Workspace{% endif %}</h2>
+                </div>
+            </div>
+            {% if selected_workspace %}
+            <div class="member-list">
+                {% for row in member_rows %}
+                <div class="member-row">
+                    <div class="member-summary">
+                        <div>
+                            <strong>{{ row.membership.user.username }}</strong>
+                            <div class="subline">{{ row.membership.user.email|default:"-" }}</div>
+                        </div>
+                        <span class="mini-pill">{{ row.membership.get_role_display }}</span>
+                    </div>
+                    {% if row.can_manage %}
+                    <div class="member-actions">
+                        <form method="post" action="{% url 'hub:update_workspace_member' row.membership.id %}" class="member-role-form">
+                            {% csrf_token %}
+                            {{ row.role_form.role }}
+                            <button type="submit" class="ghost-button">{% if ui_language == "en-us" %}Save role{% else %}保存角色{% endif %}</button>
+                        </form>
+                        {% if row.can_remove %}
+                        <form method="post" action="{% url 'hub:remove_workspace_member' row.membership.id %}" class="member-remove-form">
+                            {% csrf_token %}
+                            <button type="submit" class="ghost-button danger-button">{% if ui_language == "en-us" %}Remove{% else %}移除{% endif %}</button>
+                        </form>
+                        {% else %}
+                        <span class="subline">{% if ui_language == "en-us" %}Keep at least one active owner.{% else %}至少保留一个激活 Owner。{% endif %}</span>
+                        {% endif %}
+                    </div>
+                    {% elif can_manage_workspace_members %}
+                    <div class="member-actions member-actions-locked">
+                        <span class="subline">{% if ui_language == "en-us" %}This owner can only be changed by another owner.{% else %}这个 Owner 只能由另一个 Owner 修改。{% endif %}</span>
+                    </div>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <div class="empty-detail">{% if ui_language == "en-us" %}No active members yet.{% else %}当前还没有激活成员。{% endif %}</div>
+                {% endfor %}
+            </div>
+
+            {% if invite_form %}
+            <form class="stack-form" method="post" action="{% url 'hub:invite_workspace_member' %}">
+                {% csrf_token %}
+                <input type="hidden" name="workspace_slug" value="{{ selected_workspace.slug }}">
+                <label>{% if ui_language == "en-us" %}Invitee email{% else %}被邀请人邮箱{% endif %}{{ invite_form.email }}</label>
+                <label>{% if ui_language == "en-us" %}Role{% else %}角色{% endif %}{{ invite_form.role }}</label>
+                <label>{% if ui_language == "en-us" %}Note{% else %}说明{% endif %}{{ invite_form.note }}</label>
+                <button type="submit">{% if ui_language == "en-us" %}Send invitation{% else %}发送邀请{% endif %}</button>
+            </form>
+            <div class="hint-box">
+                <p>{% if ui_language == "en-us" %}Users register for their own accounts, then owners or managers invite them by email. The invite appears in the recipient’s inbox after sign-in. Owners can manage every member. Managers can manage non-owner members only.{% else %}用户自己注册账号，Owner 或 Manager 再按邮箱发邀请。对方登录后，会在 inbox 中看到邀请。Owner 可以管理所有成员；Manager 只能管理非 Owner 成员。{% endif %}</p>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="empty-detail">{% if ui_language == "en-us" %}No accessible workspace selected yet.{% else %}当前没有可访问的 workspace。{% endif %}</div>
+            {% endif %}
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">{% if ui_language == "en-us" %}Pending Invites{% else %}待处理邀请记录{% endif %}</p>
+                    <h2>{% if selected_workspace %}{{ selected_workspace.name }}{% else %}Workspace{% endif %}</h2>
+                </div>
+            </div>
+            <div class="member-list">
+                {% for invitation in invitation_list %}
+                <div class="member-row">
+                    <div class="member-summary">
+                        <div>
+                            <strong>{{ invitation.email }}</strong>
+                            <div class="subline">{{ invitation.get_role_display }} · {{ invitation.invited_by.username }}</div>
+                            {% if invitation.note %}<div class="subline">{{ invitation.note }}</div>{% endif %}
+                        </div>
+                        <span class="mini-pill">{{ invitation.get_status_display }}</span>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="empty-detail">{% if ui_language == "en-us" %}No invitation history yet.{% else %}当前还没有邀请记录。{% endif %}</div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+
+    <aside class="side-stack">
+        <section class="panel">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">{% if ui_language == "en-us" %}Account{% else %}账户{% endif %}</p>
+                    <h2>{{ hub_user.username }}</h2>
+                </div>
+            </div>
+            <form class="stack-form" method="post" action="{% url 'hub:change_password' %}">
+                {% csrf_token %}
+                <label>{% if ui_language == "en-us" %}Current password{% else %}当前密码{% endif %}{{ password_form.old_password }}</label>
+                <label>{% if ui_language == "en-us" %}New password{% else %}新密码{% endif %}{{ password_form.new_password1 }}</label>
+                <label>{% if ui_language == "en-us" %}Repeat new password{% else %}重复新密码{% endif %}{{ password_form.new_password2 }}</label>
+                <button type="submit">{% if ui_language == "en-us" %}Update password{% else %}更新密码{% endif %}</button>
+            </form>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">{% if ui_language == "en-us" %}Interface{% else %}界面设置{% endif %}</p>
+                    <h2>{% if ui_language == "en-us" %}Personal console settings{% else %}个人控制台设置{% endif %}</h2>
+                </div>
+            </div>
+            <form method="post" action="{% url 'hub:set_preferences' %}" class="stack-form">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'hub:console' %}{% if selected_workspace %}?workspace={{ selected_workspace.slug }}{% endif %}">
+                <label><span>{% if ui_language == "en-us" %}UI Language{% else %}界面语言{% endif %}</span>{{ ui_preference_form.ui_language }}</label>
+                <label><span>{% if ui_language == "en-us" %}Theme{% else %}主题{% endif %}</span>{{ ui_preference_form.theme }}</label>
+                <button type="submit" class="ghost-button">{% if ui_language == "en-us" %}Apply UI{% else %}应用界面设置{% endif %}</button>
+            </form>
+            <div class="hint-box">
+                <p>{% if ui_language == "en-us" %}UI language only changes the console. Feed output language is configured separately per workspace or feed and is not changed here.{% else %}这里的中英文切换只影响控制台，不影响 feed 输出语言。feed 输出语言仍需在 workspace 或具体信源上单独配置。{% endif %}</p>
+            </div>
+        </section>
+    </aside>
+</section>
+{% endblock %}

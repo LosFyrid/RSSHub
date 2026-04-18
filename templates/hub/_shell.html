@@ -1,0 +1,84 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="{{ ui_language|default:'zh-hans' }}" data-theme="{{ theme|default:'system' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}RSS Hub{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'hub/hub.css' %}">
+</head>
+<body>
+    <main class="hub-shell">
+        <section class="hero-panel">
+            <div class="hero-copy-block">
+                <p class="eyebrow">RSS Hub</p>
+                <h1>{% block hero_title %}{% if ui_language == "en-us" %}Manage translated subscriptions as a focused internal product.{% else %}把翻译信源和 GitHub Markdown 信源放进一个真正可协作、可管理的内部产品。{% endif %}{% endblock %}</h1>
+                <p class="hero-copy">{% block hero_copy %}{% if ui_language == "en-us" %}UI language only changes the console. Feed output language is configured separately per workspace or feed. A workspace is the collaboration boundary for a team, topic collection, or independent subscription space.{% else %}UI 语言只控制控制台界面。Feed 输出语言仍按 workspace 或单个信源单独配置。Workspace 是协作边界，可以理解成一个小团队、一个主题库，或一个独立的订阅空间。{% endif %}{% endblock %}</p>
+            </div>
+            <div class="hero-rail">
+                <section class="hero-utility-card">
+                    <div class="hero-card-head">
+                        <p class="hero-card-kicker">{% if ui_language == "en-us" %}Control Surface{% else %}控制台{% endif %}</p>
+                        <p class="hero-card-copy">{% if ui_language == "en-us" %}Keep feed operations in Dashboard, and keep account, workspace, and collaboration settings in Console.{% else %}把信源操作放在 Dashboard，把账户、workspace 与协作设置放在 Console，避免一个页面承担过多任务。{% endif %}</p>
+                    </div>
+                    <nav class="hero-links nav-links">
+                        <a class="ghost-link {% if current_path == '/' %}is-active{% endif %}" href="{% url 'hub:dashboard' %}">{% if ui_language == "en-us" %}Dashboard{% else %}信源面板{% endif %}</a>
+                        <a class="ghost-link {% if current_path == '/console/' %}is-active{% endif %}" href="{% url 'hub:console' %}">{% if ui_language == "en-us" %}Console{% else %}用户控制台{% endif %}{% if inbox_count %}<span class="nav-badge">{{ inbox_count }}</span>{% endif %}</a>
+                    </nav>
+                </section>
+                <section class="hero-utility-card">
+                    <div class="hero-card-head">
+                        <p class="hero-card-kicker">{% if ui_language == "en-us" %}Quick Access{% else %}快速入口{% endif %}</p>
+                        <p class="hero-card-copy">{% if ui_language == "en-us" %}Subscription links remain public. Login only protects the management surface and collaboration actions.{% else %}订阅链接仍保持公开。登录只保护管理界面与协作动作，不影响 Reader 等订阅端的拉取。{% endif %}</p>
+                    </div>
+                    <div class="hero-links">
+                        <a class="ghost-link" href="/admin/">Admin</a>
+                        {% if selected_workspace %}
+                        <a class="ghost-link" href="/rss/workspace/{{ selected_workspace.slug }}">{% if ui_language == "en-us" %}Workspace RSS{% else %}Workspace RSS 输出{% endif %}</a>
+                        {% endif %}
+                        <form method="post" action="{% url 'hub:logout' %}">
+                            {% csrf_token %}
+                            <button type="submit" class="ghost-button full-width">{% if ui_language == "en-us" %}Sign out{% else %}退出登录{% endif %}</button>
+                        </form>
+                    </div>
+                </section>
+            </div>
+        </section>
+
+        {% if messages %}
+        <section class="message-stack">
+            {% for message in messages %}
+            <div class="message {{ message.tags|default:'info' }}">{{ message }}</div>
+            {% endfor %}
+        </section>
+        {% endif %}
+
+        {% if selected_workspace %}
+        <section class="workspace-switcher-banner">
+            <div class="workspace-switcher-copy">
+                <p class="panel-kicker">{% if ui_language == "en-us" %}Current Workspace{% else %}当前 Workspace{% endif %}</p>
+                <h2>{{ selected_workspace.name }}</h2>
+                <p class="workspace-switcher-meta">{% if ui_language == "en-us" %}Switch only among workspaces you already belong to. A workspace acts like a small organization or shared subscription boundary.{% else %}这里只能切换到你已加入的 workspace。它更接近一个小型 organization，代表协作边界与共享订阅空间。{% endif %}</p>
+            </div>
+            <form method="get" class="workspace-switcher-form">
+                {% block workspace_switcher_hidden %}{% endblock %}
+                <label>
+                    <span>{% if ui_language == "en-us" %}Switch workspace{% else %}切换 workspace{% endif %}</span>
+                    <select name="workspace" onchange="this.form.submit()">
+                        {% for workspace in workspaces %}
+                        <option value="{{ workspace.slug }}" {% if selected_workspace and selected_workspace.id == workspace.id %}selected{% endif %}>{{ workspace.name }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <noscript>
+                    <button type="submit" class="ghost-button">{% if ui_language == "en-us" %}Go{% else %}切换{% endif %}</button>
+                </noscript>
+            </form>
+        </section>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
+    <script src="{% static 'hub/hub.js' %}"></script>
+</body>
+</html>

@@ -6,9 +6,12 @@ app_name = "hub"
 
 urlpatterns = [
     path("login/", views.hub_login, name="login"),
+    path("register/", views.hub_register, name="register"),
     path("logout/", views.hub_logout, name="logout"),
     path("", views.hub_dashboard, name="dashboard"),
+    path("console/", views.hub_console, name="console"),
     path("workspaces/create/", views.hub_create_workspace, name="create_workspace"),
+    path("workspaces/update/", views.hub_update_workspace, name="update_workspace"),
     path("preferences/", views.hub_set_preferences, name="set_preferences"),
     path("account/password/", views.hub_change_password, name="change_password"),
     path("feeds/create/", views.hub_create_feed, name="create_feed"),
@@ -23,9 +26,9 @@ urlpatterns = [
         name="update_workspace_providers",
     ),
     path(
-        "workspaces/members/create/",
-        views.hub_create_workspace_user,
-        name="create_workspace_user",
+        "workspaces/members/invite/",
+        views.hub_invite_workspace_member,
+        name="invite_workspace_member",
     ),
     path(
         "workspaces/members/<int:membership_id>/role/",
@@ -36,5 +39,10 @@ urlpatterns = [
         "workspaces/members/<int:membership_id>/remove/",
         views.hub_remove_workspace_member,
         name="remove_workspace_member",
+    ),
+    path(
+        "inbox/invitations/<int:invitation_id>/respond/",
+        views.hub_respond_invitation,
+        name="respond_invitation",
     ),
 ]

@@ -1,5 +1,6 @@
 from core.models.workspace import Workspace
 from core.models.workspace_membership import WorkspaceMembership
+from core.models.workspace_invitation import WorkspaceInvitation
 from core.models.feed_group import FeedGroup
 from core.models.feed import Feed
 from core.models.entry import Entry

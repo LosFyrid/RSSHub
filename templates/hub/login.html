@@ -9,38 +9,83 @@
 </head>
 <body class="login-page">
     <main class="login-shell">
-        <section class="login-panel">
+        <section class="login-panel login-panel-wide">
             <div class="login-copy">
                 <p class="eyebrow">RSS Hub</p>
-                <h1>{% if ui_language == "en-us" %}Sign in to manage workspaces, members, and translated feeds.{% else %}登录后再管理 workspace、成员与翻译信源。{% endif %}</h1>
+                <h1>{% if ui_language == "en-us" %}Sign in or create an account to manage workspaces, invitations, and translated feeds.{% else %}登录或注册账号后，再管理 workspace、邀请与翻译信源。{% endif %}</h1>
                 <p class="hero-copy">
                     {% if ui_language == "en-us" %}
-                    Subscription URLs remain public in this phase. Login only protects the management console and collaboration operations.
+                    Subscription URLs remain public in this phase. Login only protects the management console and collaboration operations. Users create their own accounts, and workspace owners or managers invite members by email.
                     {% else %}
-                    这一阶段仅保护管理控制台。RSS 与 OPML 订阅链接仍保持公开，不影响你现有的 Reader 订阅方式。
+                    这一阶段仅保护管理控制台。RSS 与 OPML 订阅链接仍保持公开，不影响你现有的 Reader 订阅方式。用户自己注册账号，workspace 的 Owner 或 Manager 再按邮箱邀请成员加入。
                     {% endif %}
                 </p>
-            </div>
-            <form method="post" class="login-form panel">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="{{ next_url }}">
-                <label>
-                    <span>{% if ui_language == "en-us" %}Username{% else %}用户名{% endif %}</span>
-                    {{ form.username }}
-                </label>
-                <label>
-                    <span>{% if ui_language == "en-us" %}Password{% else %}密码{% endif %}</span>
-                    {{ form.password }}
-                </label>
-                {% if form.non_field_errors %}
-                <div class="message error">
-                    {% for error in form.non_field_errors %}
-                    <div>{{ error }}</div>
-                    {% endfor %}
+                <div class="hint-box login-hint-box">
+                    <p>{% if ui_language == "en-us" %}If someone invited your email to a workspace, sign in after registration and the invitation will appear in your inbox automatically.{% else %}如果别人已经按你的邮箱发过 workspace 邀请，那么你注册并登录后，邀请会自动出现在 inbox 中。{% endif %}</p>
                 </div>
-                {% endif %}
-                <button type="submit">{% if ui_language == "en-us" %}Sign in{% else %}登录{% endif %}</button>
-            </form>
+            </div>
+            <div class="login-stack">
+                <form method="post" class="login-form panel">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ next_url }}">
+                    <div class="panel-head login-head">
+                        <div>
+                            <p class="panel-kicker">{% if ui_language == "en-us" %}Existing account{% else %}已有账号{% endif %}</p>
+                            <h2>{% if ui_language == "en-us" %}Sign in{% else %}登录{% endif %}</h2>
+                        </div>
+                    </div>
+                    <label>
+                        <span>{% if ui_language == "en-us" %}Username{% else %}用户名{% endif %}</span>
+                        {{ form.username }}
+                    </label>
+                    <label>
+                        <span>{% if ui_language == "en-us" %}Password{% else %}密码{% endif %}</span>
+                        {{ form.password }}
+                    </label>
+                    {% if form.non_field_errors %}
+                    <div class="message error">
+                        {% for error in form.non_field_errors %}
+                        <div>{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <button type="submit">{% if ui_language == "en-us" %}Sign in{% else %}登录{% endif %}</button>
+                </form>
+
+                <form method="post" action="{% url 'hub:register' %}" class="login-form panel">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ next_url }}">
+                    <div class="panel-head login-head">
+                        <div>
+                            <p class="panel-kicker">{% if ui_language == "en-us" %}New account{% else %}注册账号{% endif %}</p>
+                            <h2>{% if ui_language == "en-us" %}Create account{% else %}创建账号{% endif %}</h2>
+                        </div>
+                    </div>
+                    <label><span>{% if ui_language == "en-us" %}Username{% else %}用户名{% endif %}</span>{{ registration_form.username }}</label>
+                    <label><span>{% if ui_language == "en-us" %}Email{% else %}邮箱{% endif %}</span>{{ registration_form.email }}</label>
+                    <div class="split-fields">
+                        <label><span>{% if ui_language == "en-us" %}First name{% else %}名字{% endif %}</span>{{ registration_form.first_name }}</label>
+                        <label><span>{% if ui_language == "en-us" %}Last name{% else %}姓氏{% endif %}</span>{{ registration_form.last_name }}</label>
+                    </div>
+                    <div class="split-fields">
+                        <label><span>{% if ui_language == "en-us" %}Password{% else %}密码{% endif %}</span>{{ registration_form.password1 }}</label>
+                        <label><span>{% if ui_language == "en-us" %}Repeat password{% else %}重复密码{% endif %}</span>{{ registration_form.password2 }}</label>
+                    </div>
+                    {% if registration_form.errors %}
+                    <div class="message error">
+                        {% for field in registration_form %}
+                            {% for error in field.errors %}
+                            <div>{{ field.label }}: {{ error }}</div>
+                            {% endfor %}
+                        {% endfor %}
+                        {% for error in registration_form.non_field_errors %}
+                        <div>{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <button type="submit">{% if ui_language == "en-us" %}Create account{% else %}创建账号{% endif %}</button>
+                </form>
+            </div>
         </section>
     </main>
     <script src="{% static 'hub/hub.js' %}"></script>

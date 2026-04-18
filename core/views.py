@@ -16,12 +16,14 @@ from .models import (
     Workspace,
     FeedGroup,
     OpenAIAgent,
+    WorkspaceInvitation,
     WorkspaceMembership,
 )
 from django.shortcuts import redirect, get_object_or_404, render
 from django.contrib import messages
 from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.db.models import Q
+from django.urls import reverse
 from lxml import etree
 from django.utils.translation import activate, gettext_lazy as _
 from feed2json import feed2json
@@ -36,11 +38,14 @@ from .forms import (
     HubBulkExportForm,
     HubFeedCreateForm,
     HubFeedEditForm,
+    HubInvitationDecisionForm,
     HubLoginForm,
     HubPasswordChangeForm,
+    HubRegistrationForm,
     HubUiPreferenceForm,
-    HubUserCreateForm,
     HubWorkspaceCreateForm,
+    HubWorkspaceEditForm,
+    HubWorkspaceInviteForm,
     HubWorkspaceMemberRoleForm,
     HubWorkspaceProviderForm,
 )
@@ -195,6 +200,30 @@ def _member_queryset_for_workspace(selected_workspace):
     )
 
 
+def _invitation_queryset_for_workspace(selected_workspace):
+    if not selected_workspace:
+        return WorkspaceInvitation.objects.none()
+    return (
+        WorkspaceInvitation.objects.select_related("invited_by", "target_user")
+        .filter(workspace=selected_workspace)
+        .order_by("-created_at")
+    )
+
+
+def _pending_invitations_for_user(user):
+    if not user or not user.is_authenticated:
+        return WorkspaceInvitation.objects.none()
+    email = (user.email or "").strip().lower()
+    queryset = WorkspaceInvitation.objects.select_related("workspace", "invited_by").filter(
+        status=WorkspaceInvitation.PENDING
+    )
+    if email:
+        queryset = queryset.filter(email__iexact=email)
+    else:
+        queryset = queryset.none()
+    return queryset.order_by("-created_at")
+
+
 def _role_choices_for_manager(can_assign_owner):
     choices = []
     for value, label in WorkspaceMembership.ROLE_CHOICES:
@@ -303,62 +332,58 @@ def _login_required_hub(view_func):
     return wrapped
 
 
+def _hub_navigation_context(request, ui_language, workspaces, selected_workspace=None):
+    inbox_count = _pending_invitations_for_user(request.user).count()
+    return {
+        "ui_language": ui_language,
+        "theme": _hub_theme(request),
+        "hub_user": request.user,
+        "workspaces": workspaces,
+        "selected_workspace": selected_workspace,
+        "current_path": request.path,
+        "ui_preference_form": HubUiPreferenceForm(
+            initial={
+                "ui_language": ui_language,
+                "theme": _hub_theme(request),
+            },
+            ui_language=ui_language,
+        ),
+        "inbox_count": inbox_count,
+    }
+
+
 @_login_required_hub
 def hub_dashboard(request):
     ui_language = _hub_language(request)
     activate(ui_language)
     workspaces = _hub_accessible_workspaces(request)
     if not workspaces.exists():
-        return render(
-            request,
-            "hub/dashboard.html",
-            {
-                "feeds": Feed.objects.none(),
-                "workspaces": workspaces,
-                "groups": FeedGroup.objects.none(),
-                "filters": {
-                    "q": "",
-                    "workspace": "",
-                    "group": "",
-                    "source_kind": "",
-                    "archived": "active",
-                },
-                "create_form": None,
-                "export_form": None,
-                "bulk_edit_form": None,
-                "feed_edit_form": None,
-                "selected_feed": None,
-                "selected_workspace": None,
-                "workspace_create_form": HubWorkspaceCreateForm(
-                    ui_language=ui_language,
-                ),
-                "workspace_provider_form": None,
-                "ui_preference_form": HubUiPreferenceForm(
-                    initial={
-                        "ui_language": ui_language,
-                        "theme": _hub_theme(request),
-                    },
-                    ui_language=ui_language,
-                ),
-                "source_kind_choices": Feed.SOURCE_KIND_CHOICES,
-                "selected_group": "",
-                "ui_language": ui_language,
-                "theme": _hub_theme(request),
-                "membership_map": {},
-                "selected_workspace_role": None,
-                "member_list": [],
-                "member_rows": [],
-                "member_create_form": None,
-                "password_form": HubPasswordChangeForm(
-                    user=request.user,
-                    ui_language=ui_language,
-                ),
-                "hub_user": request.user,
-                "can_manage_selected_workspace": False,
-                "can_manage_workspace_members": False,
-                "has_workspace_access": False,
+        context = {
+            **_hub_navigation_context(request, ui_language, workspaces),
+            "feeds": Feed.objects.none(),
+            "groups": FeedGroup.objects.none(),
+            "filters": {
+                "q": "",
+                "workspace": "",
+                "group": "",
+                "source_kind": "",
+                "archived": "active",
             },
-        )
+            "create_form": None,
+            "export_form": None,
+            "bulk_edit_form": None,
+            "feed_edit_form": None,
+            "selected_feed": None,
+            "workspace_create_form": HubWorkspaceCreateForm(
+                ui_language=ui_language,
+            ),
+            "source_kind_choices": Feed.SOURCE_KIND_CHOICES,
+            "selected_group": "",
+            "membership_map": {},
+            "selected_workspace_role": None,
+            "has_workspace_access": False,
+        }
+        return render(request, "hub/dashboard.html", context)
 
     feeds, filters = _feed_queryset_for_hub(request, workspaces)
     groups = FeedGroup.objects.select_related("workspace").filter(
@@ -398,43 +423,14 @@ def hub_dashboard(request):
         )
     else:
         feed_edit_form = None
-    workspace_create_form = HubWorkspaceCreateForm(ui_language=ui_language)
-    workspace_provider_form = HubWorkspaceProviderForm(
-        ui_language=ui_language,
-        workspace_queryset=workspaces,
-    )
-    if selected_workspace:
-        workspace_provider_form.set_workspace_initial(selected_workspace)
-    ui_preference_form = HubUiPreferenceForm(
-        initial={
-            "ui_language": ui_language,
-            "theme": _hub_theme(request),
-        },
-        ui_language=ui_language,
-    )
-    member_list = list(_member_queryset_for_workspace(selected_workspace))
-    can_manage_workspace_members = (
-        _workspace_member_management_allowed(request, selected_workspace, membership_map)
-        if selected_workspace
-        else False
-    )
-    can_assign_owner_role = (
-        _can_assign_owner_role(request, selected_workspace, membership_map)
-        if selected_workspace
-        else False
-    )
-    member_create_form = (
-        HubUserCreateForm(
-            ui_language=ui_language,
-            role_choices=_role_choices_for_manager(can_assign_owner_role),
-        )
-        if can_manage_workspace_members
-        else None
-    )
-    password_form = HubPasswordChangeForm(user=request.user, ui_language=ui_language)
     context = {
+        **_hub_navigation_context(
+            request,
+            ui_language,
+            workspaces,
+            selected_workspace=selected_workspace,
+        ),
         "feeds": feeds,
-        "workspaces": workspaces,
         "groups": groups,
         "filters": filters,
         "create_form": create_form,
@@ -442,29 +438,11 @@ def hub_dashboard(request):
         "bulk_edit_form": bulk_edit_form,
         "feed_edit_form": feed_edit_form,
         "selected_feed": selected_feed,
-        "selected_workspace": selected_workspace,
-        "workspace_create_form": workspace_create_form,
-        "workspace_provider_form": workspace_provider_form,
-        "ui_preference_form": ui_preference_form,
         "source_kind_choices": Feed.SOURCE_KIND_CHOICES,
         "selected_group": filters["group"],
-        "ui_language": ui_language,
-        "theme": _hub_theme(request),
         "membership_map": membership_map,
         "selected_workspace_role": selected_workspace_role,
-        "member_list": member_list,
-        "member_rows": _member_rows(
-            selected_workspace,
-            member_list,
-            ui_language,
-            can_manage_workspace_members,
-            request,
-        ),
-        "member_create_form": member_create_form,
-        "password_form": password_form,
-        "hub_user": request.user,
         "can_manage_selected_workspace": can_manage_selected_workspace,
-        "can_manage_workspace_members": can_manage_workspace_members,
         "has_workspace_access": True,
     }
     return render(request, "hub/dashboard.html", context)
@@ -487,10 +465,46 @@ def hub_login(request):
         "hub/login.html",
         {
             "form": form,
+            "registration_form": HubRegistrationForm(ui_language=ui_language),
             "next_url": request.GET.get("next") or request.POST.get("next") or _hub_redirect().url,
             "ui_language": ui_language,
             "theme": _hub_theme(request),
         },
+    )
+
+
+@require_http_methods(["POST"])
+def hub_register(request):
+    ui_language = _hub_language(request)
+    activate(ui_language)
+    form = HubRegistrationForm(request.POST, ui_language=ui_language)
+    if form.is_valid():
+        user = form.save()
+        WorkspaceInvitation.objects.filter(
+            email__iexact=user.email,
+            status=WorkspaceInvitation.PENDING,
+            target_user__isnull=True,
+        ).update(target_user=user)
+        login(request, user)
+        request.session["hub_ui_language"] = ui_language
+        messages.success(
+            request,
+            _("Account created. Review invitations in your inbox.")
+            if ui_language == "en-us"
+            else _("账号已创建。请到 inbox 查看邀请。"),
+        )
+        return _hub_redirect()
+    return render(
+        request,
+        "hub/login.html",
+        {
+            "form": HubLoginForm(request, ui_language=ui_language),
+            "registration_form": form,
+            "next_url": request.POST.get("next") or _hub_redirect().url,
+            "ui_language": ui_language,
+            "theme": _hub_theme(request),
+        },
+        status=200,
     )
 
 
@@ -527,6 +541,87 @@ def hub_create_workspace(request):
         for error in errors:
             messages.error(request, f"{field}: {error}")
     return _hub_redirect()
+
+
+@_login_required_hub
+@require_http_methods(["GET"])
+def hub_console(request):
+    ui_language = _hub_language(request)
+    activate(ui_language)
+    workspaces = _hub_accessible_workspaces(request)
+    selected_workspace = _workspace_for_dashboard(request, workspaces)
+    membership_map = _workspace_membership_map(request, workspaces)
+    can_manage_selected_workspace = (
+        _can_manage_workspace(request, selected_workspace, membership_map)
+        if selected_workspace
+        else False
+    )
+    can_manage_workspace_members = (
+        _workspace_member_management_allowed(request, selected_workspace, membership_map)
+        if selected_workspace
+        else False
+    )
+    can_assign_owner_role = (
+        _can_assign_owner_role(request, selected_workspace, membership_map)
+        if selected_workspace
+        else False
+    )
+    workspace_provider_form = HubWorkspaceProviderForm(
+        ui_language=ui_language,
+        workspace_queryset=workspaces,
+    )
+    if selected_workspace:
+        workspace_provider_form.set_workspace_initial(selected_workspace)
+    context = {
+        **_hub_navigation_context(
+            request,
+            ui_language,
+            workspaces,
+            selected_workspace=selected_workspace,
+        ),
+        "selected_workspace_role": (
+            membership_map.get(selected_workspace.id) if selected_workspace else None
+        ),
+        "workspace_create_form": HubWorkspaceCreateForm(ui_language=ui_language),
+        "workspace_edit_form": (
+            HubWorkspaceEditForm(instance=selected_workspace, ui_language=ui_language)
+            if selected_workspace
+            else None
+        ),
+        "workspace_provider_form": workspace_provider_form,
+        "provider_has_any_translator": bool(
+            getattr(workspace_provider_form, "available_translator_choices", [])
+        ),
+        "provider_has_any_summarizer": bool(
+            getattr(workspace_provider_form, "available_summarizer_count", 0)
+        ),
+        "member_list": list(_member_queryset_for_workspace(selected_workspace)),
+        "member_rows": _member_rows(
+            selected_workspace,
+            list(_member_queryset_for_workspace(selected_workspace)),
+            ui_language,
+            can_manage_workspace_members,
+            request,
+        ),
+        "invitation_list": list(_invitation_queryset_for_workspace(selected_workspace)),
+        "invite_form": (
+            HubWorkspaceInviteForm(
+                ui_language=ui_language,
+                role_choices=_role_choices_for_manager(can_assign_owner_role),
+            )
+            if can_manage_workspace_members
+            else None
+        ),
+        "inbox_invitations": list(_pending_invitations_for_user(request.user)),
+        "invitation_decision_form": HubInvitationDecisionForm(),
+        "password_form": HubPasswordChangeForm(
+            user=request.user,
+            ui_language=ui_language,
+        ),
+        "can_manage_selected_workspace": can_manage_selected_workspace,
+        "can_manage_workspace_members": can_manage_workspace_members,
+    }
+    return render(request, "hub/console.html", context)
 
 
 @_login_required_hub
@@ -781,7 +876,40 @@ def hub_update_workspace_providers(request):
     for field, errors in form.errors.items():
         for error in errors:
             messages.error(request, f"{field}: {error}")
-    return _hub_redirect()
+    return redirect("hub:console")
+
+
+@_login_required_hub
+@require_http_methods(["POST"])
+def hub_update_workspace(request):
+    ui_language = _hub_language(request)
+    activate(ui_language)
+    workspaces = _hub_accessible_workspaces(request)
+    workspace_slug = (request.POST.get("workspace_slug") or "").strip()
+    workspace = get_object_or_404(workspaces, slug=workspace_slug)
+    if not _can_manage_workspace(
+        request,
+        workspace,
+        _workspace_membership_map(request, workspaces),
+    ):
+        messages.error(request, _("You do not have permission to edit that workspace."))
+        return redirect("hub:console")
+    form = HubWorkspaceEditForm(
+        request.POST,
+        instance=workspace,
+        ui_language=ui_language,
+    )
+    if form.is_valid():
+        updated_workspace = form.save()
+        messages.success(
+            request,
+            _("Workspace updated: {}").format(updated_workspace.name),
+        )
+    else:
+        for field, errors in form.errors.items():
+            for error in errors:
+                messages.error(request, f"{field}: {error}")
+    return redirect(f"{reverse('hub:console')}?workspace={workspace.slug}")
 
 
 @_login_required_hub
@@ -792,7 +920,8 @@ def hub_set_preferences(request):
         request.session["hub_ui_language"] = form.cleaned_data["ui_language"]
         request.session["hub_theme"] = form.cleaned_data["theme"]
         activate(form.cleaned_data["ui_language"])
-    return _hub_redirect()
+    target = request.POST.get("next") or request.META.get("HTTP_REFERER") or _hub_redirect().url
+    return redirect(target)
 
 
 @_login_required_hub
@@ -843,12 +972,12 @@ def hub_change_password(request):
         for field, errors in form.errors.items():
             for error in errors:
                 messages.error(request, f"{field}: {error}")
-    return _hub_redirect()
+    return redirect("hub:console")
 
 
 @_login_required_hub
 @require_http_methods(["POST"])
-def hub_create_workspace_user(request):
+def hub_invite_workspace_member(request):
     ui_language = _hub_language(request)
     activate(ui_language)
     workspaces = _hub_accessible_workspaces(request)
@@ -857,8 +986,8 @@ def hub_create_workspace_user(request):
     membership_map = _workspace_membership_map(request, workspaces)
     if not _workspace_member_management_allowed(request, workspace, membership_map):
         messages.error(request, _("You do not have permission to manage that workspace."))
-        return _hub_redirect()
-    form = HubUserCreateForm(
+        return redirect("hub:console")
+    form = HubWorkspaceInviteForm(
         request.POST,
         ui_language=ui_language,
         role_choices=_role_choices_for_manager(
@@ -866,21 +995,31 @@ def hub_create_workspace_user(request):
         ),
     )
     if form.is_valid():
-        user = form.save()
-        WorkspaceMembership.objects.create(
-            user=user,
+        email = form.cleaned_data["email"]
+        existing_membership = WorkspaceMembership.objects.select_related("user").filter(
             workspace=workspace,
-            role=form.cleaned_data["role"],
+            user__email__iexact=email,
+            is_active=True,
+        ).first()
+        if existing_membership:
+            messages.error(
+                request,
+                _("That email already belongs to an active workspace member."),
+            )
+            return redirect(f"{reverse('hub:console')}?workspace={workspace.slug}")
+        invitation = form.save(
+            workspace=workspace,
+            invited_by=request.user,
         )
         messages.success(
             request,
-            _("Created member {} in {}.").format(user.username, workspace.name),
+            _("Invitation sent to {} for {}.").format(email, workspace.name),
         )
     else:
         for field, errors in form.errors.items():
             for error in errors:
                 messages.error(request, f"{field}: {error}")
-    return redirect(f"{_hub_redirect().url}?workspace={workspace.slug}")
+    return redirect(f"{reverse('hub:console')}?workspace={workspace.slug}")
 
 
 @_login_required_hub
@@ -898,7 +1037,7 @@ def hub_update_workspace_member(request, membership_id: int):
     membership_map = _workspace_membership_map(request, workspaces)
     if not _can_manage_workspace_member(request, membership, membership_map):
         messages.error(request, _("You do not have permission to manage that workspace."))
-        return _hub_redirect()
+        return redirect("hub:console")
 
     form = HubWorkspaceMemberRoleForm(
         request.POST,
@@ -911,7 +1050,7 @@ def hub_update_workspace_member(request, membership_id: int):
         for field, errors in form.errors.items():
             for error in errors:
                 messages.error(request, f"{field}: {error}")
-        return redirect(f"{_hub_redirect().url}?workspace={membership.workspace.slug}")
+        return redirect(f"{reverse('hub:console')}?workspace={membership.workspace.slug}")
 
     new_role = form.cleaned_data["role"]
     if (
@@ -923,7 +1062,7 @@ def hub_update_workspace_member(request, membership_id: int):
             request,
             _("At least one active owner must remain in the workspace."),
         )
-        return redirect(f"{_hub_redirect().url}?workspace={membership.workspace.slug}")
+        return redirect(f"{reverse('hub:console')}?workspace={membership.workspace.slug}")
 
     membership.role = new_role
     membership.save(update_fields=["role", "updated_at"])
@@ -934,7 +1073,7 @@ def hub_update_workspace_member(request, membership_id: int):
             membership.get_role_display(),
         ),
     )
-    return redirect(f"{_hub_redirect().url}?workspace={membership.workspace.slug}")
+    return redirect(f"{reverse('hub:console')}?workspace={membership.workspace.slug}")
 
 
 @_login_required_hub
@@ -952,7 +1091,7 @@ def hub_remove_workspace_member(request, membership_id: int):
     membership_map = _workspace_membership_map(request, workspaces)
     if not _can_manage_workspace_member(request, membership, membership_map):
         messages.error(request, _("You do not have permission to manage that workspace."))
-        return _hub_redirect()
+        return redirect("hub:console")
 
     if (
         membership.role == WorkspaceMembership.OWNER
@@ -962,7 +1101,7 @@ def hub_remove_workspace_member(request, membership_id: int):
             request,
             _("At least one active owner must remain in the workspace."),
         )
-        return redirect(f"{_hub_redirect().url}?workspace={membership.workspace.slug}")
+        return redirect(f"{reverse('hub:console')}?workspace={membership.workspace.slug}")
 
     membership.is_active = False
     membership.save(update_fields=["is_active", "updated_at"])
@@ -973,7 +1112,54 @@ def hub_remove_workspace_member(request, membership_id: int):
             membership.workspace.name,
         ),
     )
-    return redirect(f"{_hub_redirect().url}?workspace={membership.workspace.slug}")
+    return redirect(f"{reverse('hub:console')}?workspace={membership.workspace.slug}")
+
+
+@_login_required_hub
+@require_http_methods(["POST"])
+def hub_respond_invitation(request, invitation_id: int):
+    ui_language = _hub_language(request)
+    activate(ui_language)
+    invitation = get_object_or_404(
+        WorkspaceInvitation.objects.select_related("workspace"),
+        pk=invitation_id,
+        status=WorkspaceInvitation.PENDING,
+    )
+    user_email = (request.user.email or "").strip().lower()
+    if not user_email or invitation.email.lower() != user_email:
+        messages.error(
+            request,
+            _("You do not have permission to respond to that invitation."),
+        )
+        return redirect("hub:console")
+    decision = (request.POST.get("decision") or "").strip().lower()
+    if decision == "accept":
+        membership, created = WorkspaceMembership.objects.get_or_create(
+            user=request.user,
+            workspace=invitation.workspace,
+            defaults={"role": invitation.role, "is_active": True},
+        )
+        if not created:
+            membership.role = invitation.role
+            membership.is_active = True
+            membership.save(update_fields=["role", "is_active", "updated_at"])
+        invitation.target_user = request.user
+        invitation.accept()
+        invitation.save(update_fields=["target_user", "status", "responded_at", "updated_at"])
+        messages.success(
+            request,
+            _("Joined workspace {}.").format(invitation.workspace.name),
+        )
+        return redirect(f"{reverse('hub:console')}?workspace={invitation.workspace.slug}")
+
+    invitation.target_user = request.user
+    invitation.decline()
+    invitation.save(update_fields=["target_user", "status", "responded_at", "updated_at"])
+    messages.success(
+        request,
+        _("Invitation declined."),
+    )
+    return redirect("hub:console")
 
 
 def _get_modified(request, feed_slug, feed_type="t", **kwargs):

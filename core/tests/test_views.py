@@ -9,14 +9,16 @@ from django.contrib.auth.models import User
 import io
 import json
 
-from ..models import Feed, Tag, Workspace, FeedGroup, WorkspaceMembership
+from ..models import Feed, Tag, Workspace, FeedGroup, WorkspaceInvitation, WorkspaceMembership
 from ..views import (
     rss,
     tag as tag_view,
     import_opml,
     workspace_feed,
     group_feed,
+    hub_console,
     hub_login,
+    hub_register,
     hub_dashboard,
     hub_create_workspace,
     hub_create_feed,
@@ -25,8 +27,10 @@ from ..views import (
     hub_set_preferences,
     hub_change_password,
     hub_update_feed,
+    hub_update_workspace,
     hub_update_workspace_providers,
-    hub_create_workspace_user,
+    hub_invite_workspace_member,
+    hub_respond_invitation,
     hub_update_workspace_member,
     hub_remove_workspace_member,
 )
@@ -492,6 +496,23 @@ class ViewsTestCase(TestCase):
         response = hub_login(request)
         self.assertEqual(response.status_code, 200)
         self.assertIn("登录".encode("utf-8"), response.content)
+        self.assertIn("创建账号".encode("utf-8"), response.content)
+
+    def test_hub_register(self):
+        response = self.client.post(
+            reverse("hub:register"),
+            {
+                "username": "new-user",
+                "email": "new-user@example.com",
+                "first_name": "New",
+                "last_name": "User",
+                "password1": "new-user-pass",
+                "password2": "new-user-pass",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        created_user = User.objects.get(username="new-user")
+        self.assertEqual(created_user.email, "new-user@example.com")
 
     def test_hub_create_feed(self):
         request = self.factory.post(
@@ -667,31 +688,81 @@ class ViewsTestCase(TestCase):
         self._setup_hub_request(request)
         response = hub_dashboard(request)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("创建 workspace".encode("utf-8"), response.content)
+        self.assertIn("先去 Console 创建 workspace".encode("utf-8"), response.content)
 
-    def test_hub_create_workspace_user(self):
+    def test_hub_console_renders(self):
+        request = self.factory.get("/console/")
+        self._setup_hub_request(request)
+        response = hub_console(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("用户控制台".encode("utf-8"), response.content)
+        self.assertIn("Workspace 邀请".encode("utf-8"), response.content)
+
+    def test_hub_update_workspace(self):
         request = self.factory.post(
-            "/workspaces/members/create/",
+            "/workspaces/update/",
             {
                 "workspace_slug": self.workspace.slug,
-                "username": "member-two",
-                "email": "member-two@example.com",
-                "first_name": "Two",
-                "last_name": "Member",
-                "password1": "member-two-pass",
-                "password2": "member-two-pass",
-                "role": WorkspaceMembership.VIEWER,
+                "name": "Updated Workspace",
+                "description": "Updated description",
             },
         )
         self._setup_hub_request(request)
-        response = hub_create_workspace_user(request)
+        response = hub_update_workspace(request)
         self.assertEqual(response.status_code, 302)
-        created_user = User.objects.get(username="member-two")
+        self.workspace.refresh_from_db()
+        self.assertEqual(self.workspace.name, "Updated Workspace")
+
+    def test_hub_invite_workspace_member(self):
+        request = self.factory.post(
+            "/workspaces/members/invite/",
+            {
+                "workspace_slug": self.workspace.slug,
+                "email": "member-two@example.com",
+                "role": WorkspaceMembership.VIEWER,
+                "note": "Join the Karpathy workspace",
+            },
+        )
+        self._setup_hub_request(request)
+        response = hub_invite_workspace_member(request)
+        self.assertEqual(response.status_code, 302)
         self.assertTrue(
-            WorkspaceMembership.objects.filter(
-                user=created_user,
+            WorkspaceInvitation.objects.filter(
+                email="member-two@example.com",
                 workspace=self.workspace,
                 role=WorkspaceMembership.VIEWER,
+                status=WorkspaceInvitation.PENDING,
+            ).exists()
+        )
+
+    def test_hub_accept_invitation(self):
+        invited_user = User.objects.create_user(
+            "member-two",
+            email="member-two@example.com",
+            password="member-two-pass",
+        )
+        invitation = WorkspaceInvitation.objects.create(
+            workspace=self.workspace,
+            email="member-two@example.com",
+            role=WorkspaceMembership.MANAGER,
+            invited_by=self.user,
+        )
+        request = self.factory.post(
+            f"/inbox/invitations/{invitation.id}/respond/",
+            {"decision": "accept"},
+        )
+        self._setup_request_with_messages(request)
+        request.user = invited_user
+        response = hub_respond_invitation(request, invitation.id)
+        self.assertEqual(response.status_code, 302)
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.status, WorkspaceInvitation.ACCEPTED)
+        self.assertTrue(
+            WorkspaceMembership.objects.filter(
+                user=invited_user,
+                workspace=self.workspace,
+                role=WorkspaceMembership.MANAGER,
+                is_active=True,
             ).exists()
         )
 
@@ -705,20 +776,20 @@ class ViewsTestCase(TestCase):
         self.assertNotIn(other_workspace.name.encode("utf-8"), response.content)
         self.assertIn("当前 Workspace".encode("utf-8"), response.content)
 
-    def test_owner_dashboard_member_create_form_includes_owner_role(self):
-        request = self.factory.get("/")
+    def test_owner_console_invite_form_includes_owner_role(self):
+        request = self.factory.get("/console/")
         self._setup_hub_request(request)
-        response = hub_dashboard(request)
+        response = hub_console(request)
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'<option value="owner">Owner</option>', response.content)
 
-    def test_manager_dashboard_member_create_form_excludes_owner_role(self):
+    def test_manager_console_invite_form_excludes_owner_role(self):
         membership = self.user.workspace_memberships.get(workspace=self.workspace)
         membership.role = WorkspaceMembership.MANAGER
         membership.save(update_fields=["role", "updated_at"])
-        request = self.factory.get("/")
+        request = self.factory.get("/console/")
         self._setup_hub_request(request)
-        response = hub_dashboard(request)
+        response = hub_console(request)
         self.assertEqual(response.status_code, 200)
         self.assertNotIn(b'<option value="owner">Owner</option>', response.content)
 

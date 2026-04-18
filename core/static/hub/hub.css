@@ -122,6 +122,15 @@ a {
     align-items: stretch;
 }
 
+.login-panel-wide {
+    grid-template-columns: minmax(0, 1.05fr) minmax(420px, 0.95fr);
+}
+
+.login-stack {
+    display: grid;
+    gap: 20px;
+}
+
 .login-copy,
 .login-form {
     background: var(--panel);
@@ -139,6 +148,14 @@ a {
     padding: 24px;
     display: grid;
     gap: 14px;
+}
+
+.login-head {
+    margin-bottom: 0;
+}
+
+.login-hint-box {
+    margin-top: 20px;
 }
 
 .hero-panel,
@@ -265,6 +282,29 @@ a {
     grid-template-columns: 1fr;
 }
 
+.nav-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.nav-badge {
+    margin-left: 8px;
+    display: inline-flex;
+    min-width: 22px;
+    height: 22px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--button-ink);
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.ghost-link.is-active {
+    border-color: rgba(6, 95, 70, 0.36);
+    background: var(--pill);
+}
+
 .full-width {
     width: 100%;
 }
@@ -273,6 +313,24 @@ a {
     margin-top: 22px;
     display: grid;
     grid-template-columns: minmax(0, 2.2fr) minmax(360px, 0.95fr);
+    gap: 20px;
+}
+
+.console-grid {
+    margin-top: 22px;
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(320px, 0.9fr);
+    gap: 20px;
+}
+
+.console-main {
+    display: grid;
+    gap: 20px;
+}
+
+.double-panel-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 20px;
 }
 
@@ -339,6 +397,10 @@ a {
     justify-content: space-between;
     align-items: center;
     gap: 12px;
+}
+
+.invitation-row {
+    align-items: center;
 }
 
 .stats-inline,
@@ -688,6 +750,21 @@ body:not(.bulk-mode) .bulk-col {
     align-items: center;
 }
 
+.inline-choice-form {
+    flex: 0 0 auto;
+}
+
+.provider-notes {
+    margin-top: 12px;
+    display: grid;
+    gap: 12px;
+}
+
+.warning-box {
+    border-style: solid;
+    border-color: rgba(154, 77, 18, 0.28);
+}
+
 .member-summary {
     justify-content: space-between;
     flex: 1 1 240px;
@@ -730,6 +807,8 @@ body:not(.bulk-mode) .bulk-col {
 
 @media (max-width: 1180px) {
     .layout-grid,
+    .console-grid,
+    .double-panel-grid,
     .hero-panel,
     .login-panel,
     .workspace-switcher-banner {
